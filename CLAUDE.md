@@ -1,0 +1,49 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Offline React Native app (Android + iOS, no backend, no auth) for learning English and German words with Russian translations. **`PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Read it before starting a feature and update it when a step is completed or a decision changes.
+
+## Commands
+
+```sh
+npm start                      # Metro
+npm run android                # build + install on emulator/device
+npm run ios                    # macOS only; run `cd ios && bundle exec pod install` after native dep changes
+npx tsc --noEmit               # type-check (not in package.json scripts)
+npm run lint                   # eslint
+npm test                       # jest
+npx jest __tests__/db.test.ts  # single file;  add -t "<test name>" for a single test
+cd android && ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a   # fast native compile check
+```
+
+Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 needs `react-native-worklets/plugin` to stay **last** in `babel.config.js`. `react-native-gesture-handler` is pinned to 2.x on purpose, because `@gorhom/bottom-sheet` 5 targets the v2 API. Don't upgrade it to 3.x.
+
+## Architecture
+
+- **Entry**: `App.tsx` re-exports `src/app/App.tsx`. `bootstrap()` runs **synchronously before the first render**: it opens SQLite, applies migrations and hydrates the settings store. That's why settings reads and migrations use `executeSync`.
+- **Navigation** (`src/navigation/`): a root native stack contains `Tabs` (Folders, Sets, Languages, Settings) plus screens that must cover the tab bar and be reachable from several tabs (`Set`, later the word editor and learning sessions). The Folders tab has its own nested stack (`Folders` → `Folder`). Param lists live in `navigation/types.ts`, and `ReactNavigation.RootParamList` is declared globally. Screens inside nested stacks get a root-typed navigator with `useNavigation<NativeStackNavigationProp<RootStackParamList>>()` when they open root screens.
+- **Data** (`src/db/`): op-sqlite. Each `repositories/*.ts` module is a set of async functions that map snake_case rows to the camelCase types in `src/domain/types.ts`. **After every write, a repository must call `notifyChanged(...tables)`** (`db/changes.ts`). Screens read data with `useQuery(load, tables)`, which re-runs when one of those tables changes. `load` must be memoized with `useCallback`, otherwise it re-runs on every render. There's no global data cache. The DB is the state.
+- **Migrations** (`db/migrations.ts`): an append-only array whose version is tracked in `PRAGMA user_version`. Never edit a migration that has shipped; add a new one. `migrate()` turns foreign keys off while migrating, so a migration can rebuild a table (create, copy, drop, rename) without cascading deletes, and it runs `foreign_key_check` before committing. `PRAGMA foreign_keys = ON` is set per connection in `database.ts`.
+- **Data model**: sets belong to a language, not to a folder. Folders pin sets through `folder_sets` (many-to-many). Deleting a folder only unpins its sets; deleting a set cascades to its words and pins. Folders have a manual `position` (drag and drop with `react-native-reorderable-list`), and `reorderFolders` rewrites the positions in one transaction.
+- **UI state** (`src/store/`): zustand stores only the theme mode and the active language. Setters persist to the `settings` table. Language scoping: folders, sets and words carry a `language_code`, and every list query filters by the active language.
+- **Theme**: `ThemeProvider` resolves system/light/dark to app `colors` and a React Navigation theme. Components take colors from `useAppTheme()` instead of hard-coding them.
+- **Bottom-sheet forms** (`components/formSheet/`): `useFormSheet()` is the single sheet for every create and edit form. Render `{sheet.element}` in the screen and call `sheet.open(options)`. Options declare `fields` (with `required`, `initialValue` and `multiline`) and an optional `examples` config, which turns on "+ Add example" and removable example rows. Save stays disabled until the required fields are filled, and the result is trimmed with blank examples removed (pure logic in `form.ts`). Build options with the presets in `forms.ts` (`nameForm`, `wordForm`) instead of inline field lists. All buttons are `TextButton`, and icon-only buttons are `IconButton`.
+- **Sheet rules**: sheets with inputs use `android_keyboardInputMode="adjustPan"`, never `adjustResize`. The app is edge-to-edge, so Android doesn't resize the window for the keyboard, and with `adjustResize` the library ignores the keyboard height and the sheet stays behind it. Pass `topInset={insets.top}` so a sheet never goes taller than the screen. Text inputs in sheets are uncontrolled (`defaultValue` + `onChangeText`, remounted through a `key` on every open). A controlled `value` makes the cursor jump when typing in the middle of the text on Android. Never `autoFocus` an input that mounts together with a sheet. Focus it in the sheet's `onChange(index >= 0)` instead, because focusing during the open animation pushes the sheet off-screen on Android. `useActionMenu()` (`components/ActionMenuSheet.tsx`) is the bottom-sheet menu, and the chosen action runs after the menu has dismissed, so it can safely open another sheet or an alert.
+- **List item actions**: `showItemActions()` is the long-press Rename/Delete menu, and `confirmDelete()` is just the confirmation.
+
+## Domain rules (from PLAN.md decisions)
+
+- Words are **not** unique per language. The same term may appear in several sets.
+- Term matching uses `term_norm` (trim, collapse whitespace, NFC) and is **case-sensitive**: "das Essen", "essen" and "isst" are different words.
+- Import never wipes data. A matching term fully replaces translation and examples on every matching word, and each word stays in its current set. Unmatched words go into the set from the backup, and folders and sets are matched by name or created.
+
+## Dictionaries
+
+`dictionaries/` is gitignored. The raw `wikidict` DSL files sit in `dictionaries/source/`. They're Wikipedia title pairs (mostly proper nouns), not real dictionaries, so they're only used for translation suggestions. The plan is to convert them into SQLite `.db` files with a build script and have the app download those, including en and de. Never import them through Metro or commit them.
+
+## Testing
+
+`jest.setup.js` globally mocks gesture-handler, reanimated, bottom-sheet and op-sqlite (as a no-op). `react-native-reorderable-list` is mocked as a plain FlatList. `__tests__/db.test.ts` replaces the op-sqlite mock with `test-utils/sqliteAdapter.ts`, an adapter over Node's built-in `node:sqlite`, so the real migrations and repository SQL run in Jest. Use that pattern for DB logic. `lucide-react-native` is mapped to its CJS build in `jest.config.js` because the RN preset doesn't transform `.mjs` files.
