@@ -1,16 +1,34 @@
 import type { Scalar } from '@op-engineering/op-sqlite';
 import { normalizeTerm } from '../../domain/term';
-import type { ID, Word, WordInput } from '../../domain/types';
+import type { Example, ID, Word, WordInput } from '../../domain/types';
 import { createId } from '../../utils/id';
 import { notifyChanged } from '../changes';
 import { getDb } from '../database';
 
 type Row = Record<string, Scalar>;
 
-function parseExamples(json: Scalar): string[] {
+/**
+ * A sort key above every word in the set, so the word lands on top of its
+ * part even when two changes happen within the same millisecond.
+ */
+const NEXT_SORT_AT = (setIdExpr: string) =>
+  `MAX(?, (SELECT COALESCE(MAX(w2.sort_at), 0) + 1 FROM words w2 WHERE w2.set_id = ${setIdExpr}))`;
+
+/** Accepts current `{text, translation}` objects and legacy plain strings. */
+export function parseExamples(json: Scalar): Example[] {
   try {
     const parsed = JSON.parse(String(json));
-    return Array.isArray(parsed) ? parsed.map(String) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map(item =>
+      typeof item === 'string'
+        ? { text: item, translation: '' }
+        : {
+            text: String(item?.text ?? ''),
+            translation: String(item?.translation ?? ''),
+          },
+    );
   } catch {
     return [];
   }
@@ -24,18 +42,36 @@ function toWord(row: Row): Word {
     term: row.term as string,
     translation: row.translation as string,
     examples: parseExamples(row.examples_json),
+    learnedAt: (row.learned_at as number | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
 }
 
-/** Newest first, so a freshly added word shows up at the top. */
+/**
+ * Words to learn first, then learned ones. Within each part the most
+ * recently added (or moved) word is on top.
+ */
 export async function listWords(setId: ID): Promise<Word[]> {
   const { rows } = await getDb().execute(
-    'SELECT * FROM words WHERE set_id = ? ORDER BY created_at DESC, rowid DESC',
+    `SELECT * FROM words WHERE set_id = ?
+     ORDER BY learned_at IS NOT NULL, sort_at DESC, rowid DESC`,
     [setId],
   );
   return rows.map(toWord);
+}
+
+/** Words by id, in the order of `ids` (missing ones are skipped). */
+export async function getWords(ids: ID[]): Promise<Word[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  const { rows } = await getDb().execute(
+    `SELECT * FROM words WHERE id IN (${ids.map(() => '?').join(', ')})`,
+    ids,
+  );
+  const byId = new Map(rows.map(row => [row.id as string, toWord(row)]));
+  return ids.flatMap(id => byId.get(id) ?? []);
 }
 
 /** The word inherits the language of its set. */
@@ -56,12 +92,13 @@ export async function createWord(setId: ID, input: WordInput): Promise<Word> {
     term: input.term.trim(),
     translation: input.translation.trim(),
     examples: input.examples,
+    learnedAt: null,
     createdAt: now,
     updatedAt: now,
   };
   await db.execute(
-    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, sort_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ${NEXT_SORT_AT('?')}, ?, ?)`,
     [
       word.id,
       setId,
@@ -70,6 +107,8 @@ export async function createWord(setId: ID, input: WordInput): Promise<Word> {
       normalizeTerm(word.term),
       word.translation,
       JSON.stringify(word.examples),
+      now,
+      setId,
       now,
       now,
     ],
@@ -92,6 +131,20 @@ export async function updateWord(id: ID, input: WordInput): Promise<void> {
       Date.now(),
       id,
     ],
+  );
+  notifyChanged('words');
+}
+
+/**
+ * "Learned" moves the word to the top of the learned part,
+ * "To revise" (learned = false) to the top of the list.
+ */
+export async function setLearned(id: ID, learned: boolean): Promise<void> {
+  const now = Date.now();
+  await getDb().execute(
+    `UPDATE words SET learned_at = ?, sort_at = ${NEXT_SORT_AT('words.set_id')}, updated_at = ?
+     WHERE id = ?`,
+    [learned ? now : null, now, now, id],
   );
   notifyChanged('words');
 }

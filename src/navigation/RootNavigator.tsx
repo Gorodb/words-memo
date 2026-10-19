@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TabNavigator } from './TabNavigator';
 import { SetScreen } from '../screens/sets/SetScreen';
+import { StudyScreen } from '../screens/study/StudyScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -19,6 +20,7 @@ export function RootNavigator() {
         component={SetScreen}
         options={({ route }) => ({ title: route.params.title })}
       />
+      <Stack.Screen name="Study" component={StudyScreen} />
     </Stack.Navigator>
   );
 }

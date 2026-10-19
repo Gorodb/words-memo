@@ -1,4 +1,5 @@
 import { initDatabase } from '../db/database';
+import { useDictionaryStore } from '../features/dictionary/dictionaryStore';
 import { hydrateSettings } from '../store/settingsStore';
 
 let done = false;
@@ -10,5 +11,7 @@ export function bootstrap(): void {
   }
   initDatabase();
   hydrateSettings();
+  // Async: dictionaries show as "checking…" until this finishes.
+  useDictionaryStore.getState().refresh();
   done = true;
 }

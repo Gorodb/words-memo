@@ -10,12 +10,12 @@ Language (en, de, +downloadable)
  │   └─ Word
  └─ Folder            (manual drag-and-drop order; pins any number of sets)
      ┄ pinned sets    (many-to-many; removing a folder only unpins)
-         └─ Word      term · translation · examples[]
+         └─ Word      term · translation · examples[{text, translation}] · learned
 ```
 
 - The **active language** is a global setting. The Folders and Sets tabs only show data for it.
-- **Learning programs** are plugins that work on a list of words (a set, a folder, or a mix). New ones can be added without touching the data model.
-- **Dictionaries** are read-only reference data used to suggest translations. They are kept apart from the user's data.
+- **Study modes** work on a list of words (a whole set, its not-learned words, or a selection). New modes are added to a registry without touching the data model.
+- **Dictionaries** are read-only reference data (downloaded per language) used to suggest word forms and translations. They are kept apart from the user's data.
 
 ## Navigation
 
@@ -26,11 +26,10 @@ RootStack
 │  │   ├─ Folders      header: "Folders · English" + [+] → new folder sheet; drag to reorder
 │  │   └─ Folder       header: [<] name, [add sets] → set picker sheet, [⋯] → Edit / Remove menu sheet
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
-│  ├─ LanguagesTab     en / de (bundled) ✓ active, "Download more"
-│  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import
-├─ Set                 word list, add/edit word, "Learn" (opens on top of the tabs)
-├─ WordEditor          (later) term, translation, N examples
-└─ Learn/<program>     (later) full-screen session
+│  ├─ LanguagesTab     en / de ✓ active, dictionary Download / Remove per language
+│  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
+├─ Set                 "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned
+└─ Study               one session in one study mode (opens on top of the tabs)
 ```
 
 `Set` and the learning screens sit in the root stack, so both Folders and Sets can open them and they cover the tab bar.
@@ -46,13 +45,13 @@ src/
   theme/                      colors and ThemeProvider (light/dark/system → nav theme)
   store/                      zustand: settings (theme, active language)
   domain/types.ts             Language, Folder, WordSet, Word, BackupFile
-  config/languages.ts         bundled languages and catalog URL
-  -- later --
+  config/languages.ts         bundled languages, dictionary download URLs and format version
   db/                         op-sqlite connection, migrations, repositories
+  features/dictionary/        search keys, lookup queries, download/install store
+  features/study/             study modes registry and session reducer (pure + unit tests)
+  -- later --
   features/backup/            export, import, merge logic (pure + unit tests)
-  features/dictionary/        lookup, download, install
-  features/learning/          program registry and programs/<id>/
-scripts/build-dictionary.ts   DSL → SQLite converter (runs at build time)
+scripts/dictionary/           Wiktionary → SQLite dictionary build (dict:fetch, dict:build)
 ```
 
 ## Tech choices
@@ -65,7 +64,8 @@ scripts/build-dictionary.ts   DSL → SQLite converter (runs at build time)
 | Persistence | **op-sqlite** for user data and dictionaries | dictionaries have hundreds of thousands of rows, so they need indexed lookup; one engine for everything |
 | Settings persistence | zustand `persist` → SQLite `settings` table (or MMKV) | |
 | Icons | lucide-react-native (+ react-native-svg) | autolinked, no font setup |
-| File I/O for backup | @react-native-documents/picker + a filesystem/share lib | pick an import file, save or share the export |
+| Downloads, files | @dr.pogodin/react-native-fs | dictionary downloads with progress; backup will reuse it |
+| File picking for backup | @react-native-documents/picker (later) | pick an import file, save or share the export |
 
 ## Database (SQLite)
 
@@ -74,11 +74,10 @@ folders  (id TEXT PK, language_code, name, position, created_at, updated_at)
 sets     (id TEXT PK, language_code, name, created_at, updated_at)
 folder_sets (folder_id → folders CASCADE, set_id → sets CASCADE, added_at, PK(folder_id, set_id))
 words    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code,
-          term, term_norm, translation, examples_json, created_at, updated_at)
-          INDEX (language_code, term_norm)          -- used by import merge and duplicate check
-word_progress (word_id, program_id, score, last_seen_at, due_at, …)  -- per learning program
+          term, term_norm, translation, examples_json ([{text, translation}]),
+          learned_at (NULL = to learn), sort_at (list order), created_at, updated_at)
+          INDEX (language_code, term_norm)          -- used by import merge
 settings (key PK, value)
-languages(code PK, name, native_name, dictionary_status, dictionary_version)
 ```
 
 `term_norm` = trim, collapse whitespace, Unicode NFC. **Case-sensitive**: "das Essen", "essen", "isst" and "hat gegessen" are all different words.
@@ -96,45 +95,47 @@ Words are **not unique**: the same term can be in several sets of one language.
   3. Run everything in one transaction and show a summary (X added, Y updated).
 - The merge is a pure function `(existing, backup) → operations`, so it can be unit tested without a device.
 
-## Dictionaries: important finding
+## Dictionaries
 
-The `wikidict` files are **Wikipedia article-title pairs**, not a real dictionary:
+Built from **Wiktionary** via kaikki.org / wiktextract (CC BY-SA 4.0). The original wikidict files were Wikipedia title pairs (no verbs, `Apfel → Апфель`) and were dropped.
 
-- en-ru: about 628k entries, de-ru: about 420k. Mostly proper nouns and article titles ("2015 European Athletics Indoor Championships – Men's 60 metres").
-- Common words are often missing (`house` isn't in it) or translated oddly (`Haus → Жилище`).
-- Each card's format is simple: `headword \n translation \n\t[m1]…[/m]` (UTF-8, LF line endings).
+- **Sources** (`npm run dict:fetch`, into gitignored `dictionaries/source/`):
+  - Russian Wiktionary raw dump (295 MB gz). It provides Russian glosses, forms and translated examples for German and English.
+  - English Wiktionary German extract (1 GB). It's used only for the verb auxiliary (haben/sein) and adjective comparison, which Russian Wiktionary lacks.
+- **Build** (`npm run dict:build`, about 20 s) writes `dictionaries/build/<lang>-ru.db`. Sizes: de about 18 MB (85k entries), en about 14 MB (64k entries).
+- **Display forms**:
+  - German nouns: `der Apfel, die Äpfel`.
+  - German verbs: `essen, isst, aß, hat gegessen` (or `ist` / `hat/ist`).
+  - German adjectives: `gut, besser, am besten`.
+  - English irregular verbs: `go, went, gone`.
+- **Lookup**: prefix search over the lemma and every form, with umlauts folded. Typing `isst` finds essen, and `apfel` finds Äpfel.
+- **Distribution**: GitHub Release `dict-v1` of Gorodb/words-memo. You upload the files. The Languages tab downloads them with progress and checks `meta.format`.
+- **In the word sheet**:
+  - The word field suggests entries, and picking one fills in the full forms.
+  - The translation field then suggests that entry's Russian glosses. You can still type freely.
 
-They can still be useful for **suggesting a translation while typing**, but they won't cover everyday vocabulary well. Plan:
+## Study modes
 
-1. `scripts/build-dictionary.ts`: stream-parse the DSL and drop noise (titles with digits, more than 4 words, translation equal to the headword). Write `dictionaries/build/<lang>-ru.db` with an index on `term_norm`.
-2. Publish the `.db` files as GitHub Release assets. The app downloads them, including en and de. This is not parsing a 50–80 MB DSL on the phone.
-3. en and de are pre-listed in Languages, so folders and sets work right away. Only the translation suggestions need the download.
-4. Consider a Wiktionary-based source (e.g. kaikki.org extracts) later if you want better coverage of common words.
+Registry in `src/features/study/modes.ts`; session logic in `session.ts` (pure reducer, memory only):
 
-Repo hygiene: ✅ the raw DSL files now live in `dictionaries/source/`, and `/dictionaries/` is gitignored.
+1. **Translation → word**: tap to reveal or hide the word.
+2. **Word → translation**: tap to reveal or hide the translation.
+3. **Writing the word**:
+   - **Hint** adds the next letter of the answer.
+   - **Check** compares the whole string, case-insensitive. A correct answer turns green.
+   - A wrong answer turns red and shows **Show**, **Mark as correct** and **Try again**.
+4. **Writing the translation**: the same, for the translation.
 
-## Learning programs (extensible)
-
-```ts
-interface LearningProgram {
-  id: string;                        // 'flashcards'
-  title: string;
-  minWords: number;
-  Screen: React.ComponentType<{ wordIds: ID[] }>;
-}
-// features/learning/registry.ts: export const PROGRAMS = [flashcards, quiz, typing]
-```
-
-First programs: **Flashcards** (flip, know / don't know), **Multiple choice** (pick the translation from 4), **Typing** (type the term from the translation). Progress is stored per program in `word_progress`. Spaced repetition can be added later.
+Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or correct words for the rest of the session and doesn't change the Learned flag in the set.
 
 ## Steps
 
 1. ✅ **Scaffold**: dependencies, providers, bottom tabs, Folders stack, theme switching, language switching, placeholder screens.
 2. ✅ **DB layer + Folders/Sets CRUD**: op-sqlite, migrations, repositories, create and rename bottom sheet, long-press Rename / Delete, Sets tab grouped by folder, persisted settings.
-3. **Words**: ✅ shared bottom-sheet form (`useFormSheet`: fields, required, examples), ✅ Set screen list (tap to edit, long-press to delete). Remaining: search.
+3. ✅ **Words**: shared bottom-sheet form (fields, required, suggestions, example pairs), Set screen with "To learn" / "Learned" parts, swipe to Edit / Delete, tap to expand examples, and selection mode. Remaining: search.
 4. **Backup**: export and share, import with merge and summary, unit tests for the merge.
-5. **Dictionaries**: build script, release assets, download flow, translation suggestions in the word editor.
-6. **Learning programs**: registry plus the first two programs.
+5. ✅ **Dictionaries**: Wiktionary build script, download flow, and forms and translation suggestions. Remaining: upload `de-ru.db` / `en-ru.db` to the `dict-v1` release.
+6. ✅ **Study modes**: registry plus the first 4 modes. Later: more modes, and spaced repetition.
 7. Polish: app icon, iOS build check on the Mac.
 
 ## Decisions
@@ -143,6 +144,8 @@ First programs: **Flashcards** (flip, know / don't know), **Multiple choice** (p
 - Updated words stay in their current set.
 - Term matching is case-sensitive and exact.
 - Platforms: Android and iOS. You'll sign and install the iOS build yourself as an .ipa.
-- Dictionaries are kept out of git and downloaded by the app.
+- Dictionaries come from Wiktionary, are kept out of git, and are downloaded by the app (GitHub Release).
+- Writing modes check the whole string (case-insensitive), and "Mark as correct" covers typos or a missing article.
+- "Hide learned" in study is session-only.
 - Sets are independent of folders. A folder pins sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are pinned to it.
 - Folders are sorted manually with drag and drop. New folders go to the end.

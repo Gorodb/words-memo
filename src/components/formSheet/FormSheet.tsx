@@ -1,11 +1,13 @@
 import React, {
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from 'react';
 import {
   Alert,
+  Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -31,12 +33,13 @@ import {
   type FormExamplesConfig,
   type FormField,
   type FormResult,
+  type FormSuggestion,
 } from './form';
 
 export interface FormSheetOptions {
   title: string;
   fields: FormField[];
-  /** Enables the "Add example" button and the removable example inputs. */
+  /** Enables the "Add example" button and the removable example rows. */
   examples?: FormExamplesConfig;
   submitLabel?: string;
   onSubmit: (result: FormResult) => void | Promise<void>;
@@ -48,6 +51,8 @@ export interface FormSheetHandle {
 
 /** Space kept free above the sheet when it's at full height. */
 const TOP_GAP = 24;
+const SUGGEST_DEBOUNCE_MS = 200;
+const MAX_SUGGESTIONS = 6;
 
 /** BottomSheetTextInput's ref type is the gesture-handler component; we only need focus(). */
 type Focusable = { focus: () => void };
@@ -57,8 +62,15 @@ const renderBackdrop = (props: BottomSheetBackdropProps) => (
 );
 
 /**
- * Bottom sheet form: any number of text fields, optional repeatable examples,
- * Cancel / Save text buttons. Save is disabled until required fields are filled.
+ * Bottom sheet form: any number of text fields (optionally with a suggestion
+ * dropdown), optional repeatable example + translation rows, Cancel / Save
+ * text buttons. Save is disabled until required fields are filled.
+ *
+ * All inputs are uncontrolled and their `defaultValue` never changes while
+ * mounted. React Native sends `value ?? defaultValue` to the native field, so a
+ * value that follows the typing resets the cursor on Android. To set a field
+ * from code (picking a suggestion), its seed is replaced and the input
+ * remounts through its `key`.
  */
 export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
   const { colors } = useAppTheme();
@@ -66,37 +78,106 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
   const { height } = useWindowDimensions();
   const sheetRef = useRef<BottomSheetModal>(null);
   const nextExampleId = useRef(0);
-  const firstInputRef = useRef<Focusable | null>(null);
+  const inputRefs = useRef<Record<string, Focusable | null>>({});
   const focusedSinceOpen = useRef(false);
-  const setFirstInput = useCallback((node: unknown) => {
-    firstInputRef.current = (node as Focusable | null) ?? null;
-  }, []);
+  /** Initial text of each example input, by example id (stable per mount). */
+  const exampleSeeds = useRef<Record<number, ExampleItem>>({});
 
   const [options, setOptions] = useState<FormSheetOptions | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  /** Initial text of each field input; replaced only when set from code. */
+  const [seeds, setSeeds] = useState<Record<string, string>>({});
+  /** Bumped per field when its seed is replaced, to remount that input. */
+  const [revisions, setRevisions] = useState<Record<string, number>>({});
   const [examples, setExamples] = useState<ExampleItem[]>([]);
   const [busy, setBusy] = useState(false);
-  /** Changes on every open() so the inputs remount with fresh default values. */
+  /** Changes on every open() so all inputs remount with fresh seeds. */
   const [formKey, setFormKey] = useState(0);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{
+    fieldKey: string;
+    items: FormSuggestion[];
+  } | null>(null);
+
+  const fields = options?.fields ?? [];
+
+  const newExample = (text = '', translation = ''): ExampleItem => {
+    const item = { id: nextExampleId.current++, text, translation };
+    exampleSeeds.current[item.id] = item;
+    return item;
+  };
 
   useImperativeHandle(ref, () => ({
     open: next => {
+      const start = initialValues(next.fields);
+      exampleSeeds.current = {};
       setOptions(next);
-      setValues(initialValues(next.fields));
+      setValues(start);
+      setSeeds(start);
+      setRevisions({});
       setExamples(
-        (next.examples?.initial ?? []).map(text => ({
-          id: nextExampleId.current++,
-          text,
-        })),
+        (next.examples?.initial ?? []).map(e =>
+          newExample(e.text, e.translation),
+        ),
       );
       setBusy(false);
+      setFocusedKey(null);
+      setSuggestions(null);
       setFormKey(k => k + 1);
       focusedSinceOpen.current = false;
       sheetRef.current?.present();
     },
   }));
 
-  const fields = options?.fields ?? [];
+  // Suggestions for the focused field: on focus and while typing (debounced).
+  const focusedField = fields.find(f => f.key === focusedKey);
+  const focusedText = focusedKey ? values[focusedKey] ?? '' : '';
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  useEffect(() => {
+    const source = focusedField?.suggestions;
+    if (!focusedField || !source) {
+      setSuggestions(null);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      source.load(focusedText, valuesRef.current).then(
+        items => {
+          if (active) {
+            setSuggestions({
+              fieldKey: focusedField.key,
+              items: items.slice(0, MAX_SUGGESTIONS),
+            });
+          }
+        },
+        () => active && setSuggestions(null),
+      );
+    }, SUGGEST_DEBOUNCE_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [focusedField, focusedText]);
+
+  const pickSuggestion = (field: FormField, item: FormSuggestion) => {
+    const updates = field.suggestions?.onPick(item, valuesRef.current) ?? {};
+    setValues(prev => ({ ...prev, ...updates }));
+    setSeeds(prev => ({ ...prev, ...updates }));
+    setRevisions(prev => {
+      const next = { ...prev };
+      for (const key of Object.keys(updates)) {
+        next[key] = (next[key] ?? 0) + 1;
+      }
+      return next;
+    });
+    setSuggestions(null);
+    // Continue with the next field (its own suggestions load on focus).
+    const nextField = fields[fields.indexOf(field) + 1];
+    const target = nextField?.key ?? field.key;
+    setTimeout(() => inputRefs.current[target]?.focus(), 50);
+  };
+
   const submitEnabled = !!options && !busy && canSubmit(fields, values);
 
   const close = useCallback(() => sheetRef.current?.dismiss(), []);
@@ -116,11 +197,16 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     }
   }, [options, submitEnabled, values, examples]);
 
-  const addExample = () =>
-    setExamples(prev => [...prev, { id: nextExampleId.current++, text: '' }]);
+  const addExample = () => setExamples(prev => [...prev, newExample()]);
 
-  const updateExample = (id: number, text: string) =>
-    setExamples(prev => prev.map(e => (e.id === id ? { ...e, text } : e)));
+  const updateExample = (
+    id: number,
+    part: 'text' | 'translation',
+    text: string,
+  ) =>
+    setExamples(prev =>
+      prev.map(e => (e.id === id ? { ...e, [part]: text } : e)),
+    );
 
   const removeExample = (id: number) =>
     setExamples(prev => prev.filter(e => e.id !== id));
@@ -155,9 +241,9 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
       // Focus only after the open animation: focusing while the sheet is still
       // animating makes the keyboard push it off-screen on Android.
       onChange={index => {
-        if (index >= 0 && !focusedSinceOpen.current) {
+        if (index >= 0 && !focusedSinceOpen.current && fields[0]) {
           focusedSinceOpen.current = true;
-          firstInputRef.current?.focus();
+          inputRefs.current[fields[0].key]?.focus();
         }
       }}
     >
@@ -172,69 +258,153 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
           {options?.title}
         </Text>
 
-        {/*
-          Inputs are uncontrolled (defaultValue + onChangeText). A controlled
-          `value` is written back to the native field on every keystroke, which
-          resets the cursor when typing in the middle of the text on Android.
-        */}
         <View key={formKey}>
-        {fields.map((field, index) => (
-          <View key={field.key} style={styles.field}>
-            {field.label ? (
-              <Text style={[styles.label, { color: colors.textSecondary }]}>
-                {field.label}
-                {field.required ? ' *' : ''}
-              </Text>
-            ) : null}
-            <BottomSheetTextInput
-              defaultValue={field.initialValue}
-              onChangeText={text =>
-                setValues(prev => ({ ...prev, [field.key]: text }))
-              }
-              placeholder={field.placeholder}
-              placeholderTextColor={colors.textSecondary}
-              multiline={field.multiline}
-              ref={index === 0 ? setFirstInput : undefined}
-              accessibilityLabel={field.label ?? field.placeholder}
-              style={[inputStyle, field.multiline && styles.multiline]}
-            />
-          </View>
-        ))}
-
-        {options?.examples ? (
-          <>
-            {examples.length > 0 ? (
-              <Text style={[styles.label, { color: colors.textSecondary }]}>
-                Examples
-              </Text>
-            ) : null}
-            {examples.map((example, index) => (
-              <View key={example.id} style={styles.exampleRow}>
+          {fields.map(field => {
+            const dropdown =
+              suggestions?.fieldKey === field.key &&
+              focusedKey === field.key &&
+              suggestions.items.length > 0
+                ? suggestions.items
+                : null;
+            return (
+              <View key={field.key} style={styles.field}>
+                {field.label ? (
+                  <Text
+                    style={[styles.label, { color: colors.textSecondary }]}
+                  >
+                    {field.label}
+                    {field.required ? ' *' : ''}
+                  </Text>
+                ) : null}
                 <BottomSheetTextInput
-                  defaultValue={example.text}
-                  onChangeText={text => updateExample(example.id, text)}
-                  placeholder={options.examples?.placeholder ?? 'Example'}
+                  key={revisions[field.key] ?? 0}
+                  defaultValue={seeds[field.key]}
+                  onChangeText={text =>
+                    setValues(prev => ({ ...prev, [field.key]: text }))
+                  }
+                  onFocus={() => setFocusedKey(field.key)}
+                  onBlur={() =>
+                    setFocusedKey(current =>
+                      current === field.key ? null : current,
+                    )
+                  }
+                  placeholder={field.placeholder}
                   placeholderTextColor={colors.textSecondary}
-                  multiline
-                  // Added while the sheet is open: focus the new (empty) example.
-                  autoFocus={example.text === ''}
-                  accessibilityLabel={`Example ${index + 1}`}
-                  style={[inputStyle, styles.multiline, styles.exampleInput]}
+                  multiline={field.multiline}
+                  ref={(node: unknown) => {
+                    inputRefs.current[field.key] =
+                      (node as Focusable | null) ?? null;
+                  }}
+                  accessibilityLabel={field.label ?? field.placeholder}
+                  style={[inputStyle, field.multiline && styles.multiline]}
                 />
-                <IconButton
-                  icon={CircleMinus}
-                  color={colors.danger}
-                  size={22}
-                  accessibilityLabel={`Remove example ${index + 1}`}
-                  onPress={() => removeExample(example.id)}
-                />
+                {dropdown ? (
+                  <View
+                    style={[
+                      styles.dropdown,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                  >
+                    {dropdown.map((item, i) => (
+                      <Pressable
+                        key={item.key}
+                        onPress={() => pickSuggestion(field, item)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Suggestion ${item.title}`}
+                        style={({ pressed }) => [
+                          styles.suggestion,
+                          i > 0 && {
+                            borderTopColor: colors.border,
+                            borderTopWidth: StyleSheet.hairlineWidth,
+                          },
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={[styles.suggestionTitle, { color: colors.text }]}>
+                          {item.title}
+                        </Text>
+                        {item.subtitle ? (
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.suggestionSubtitle,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {item.subtitle}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                {field.hint ? (
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                    {field.hint}
+                  </Text>
+                ) : null}
               </View>
-            ))}
-            <View style={styles.addExample}>
-              <TextButton title="+ Add example" onPress={addExample} />
-            </View>
-          </>
-        ) : null}
+            );
+          })}
+
+          {options?.examples ? (
+            <>
+              {examples.length > 0 ? (
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                  Examples
+                </Text>
+              ) : null}
+              {examples.map((example, index) => {
+                const seed = exampleSeeds.current[example.id];
+                return (
+                  <View key={example.id} style={styles.exampleRow}>
+                    <View style={styles.examplePair}>
+                      <BottomSheetTextInput
+                        defaultValue={seed?.text}
+                        onChangeText={text =>
+                          updateExample(example.id, 'text', text)
+                        }
+                        placeholder={options.examples?.placeholder ?? 'Example'}
+                        placeholderTextColor={colors.textSecondary}
+                        multiline
+                        // Added while the sheet is open: focus the new (empty) row.
+                        autoFocus={!seed?.text && !seed?.translation}
+                        accessibilityLabel={`Example ${index + 1}`}
+                        style={[inputStyle, styles.multiline]}
+                      />
+                      <BottomSheetTextInput
+                        defaultValue={seed?.translation}
+                        onChangeText={text =>
+                          updateExample(example.id, 'translation', text)
+                        }
+                        placeholder={
+                          options.examples?.translationPlaceholder ??
+                          'Translation'
+                        }
+                        placeholderTextColor={colors.textSecondary}
+                        multiline
+                        accessibilityLabel={`Example ${index + 1} translation`}
+                        style={[inputStyle, styles.multiline]}
+                      />
+                    </View>
+                    <IconButton
+                      icon={CircleMinus}
+                      color={colors.danger}
+                      size={22}
+                      accessibilityLabel={`Remove example ${index + 1}`}
+                      onPress={() => removeExample(example.id)}
+                    />
+                  </View>
+                );
+              })}
+              <View style={styles.addExample}>
+                <TextButton title="+ Add example" onPress={addExample} />
+              </View>
+            </>
+          ) : null}
         </View>
 
         <View style={styles.actions}>
@@ -265,6 +435,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
   field: { marginBottom: 12 },
   label: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
+  hint: { fontSize: 12, marginTop: 4 },
   input: {
     fontSize: 16,
     borderWidth: StyleSheet.hairlineWidth,
@@ -273,13 +444,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   multiline: { minHeight: 44, textAlignVertical: 'top' },
+  dropdown: {
+    marginTop: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  suggestion: { paddingHorizontal: 12, paddingVertical: 10 },
+  suggestionTitle: { fontSize: 15 },
+  suggestionSubtitle: { fontSize: 13, marginTop: 2 },
+  pressed: { opacity: 0.5 },
   exampleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  exampleInput: { flex: 1 },
+  examplePair: { flex: 1, gap: 6 },
   addExample: { alignItems: 'flex-start', marginLeft: -12 },
   actions: {
     flexDirection: 'row',

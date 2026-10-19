@@ -1,4 +1,27 @@
 /** Pure form logic of FormSheet, kept separate so it can be unit tested. */
+import type { Example } from '../../domain/types';
+
+export interface FormSuggestion {
+  key: string;
+  title: string;
+  subtitle?: string;
+}
+
+export interface FormFieldSuggestions {
+  /**
+   * Called (debounced) when the field gets focus and on every change while
+   * focused. Return [] to show no dropdown.
+   */
+  load: (
+    text: string,
+    values: Record<string, string>,
+  ) => Promise<FormSuggestion[]>;
+  /** Field values to set when a suggestion is picked, by field key. */
+  onPick: (
+    suggestion: FormSuggestion,
+    values: Record<string, string>,
+  ) => Record<string, string>;
+}
 
 export interface FormField {
   key: string;
@@ -8,23 +31,27 @@ export interface FormField {
   /** Save stays disabled until this field has non-blank text. */
   required?: boolean;
   multiline?: boolean;
+  /** Small muted text below the input. */
+  hint?: string;
+  /** Dropdown with suggestions below the input while it's focused. */
+  suggestions?: FormFieldSuggestions;
 }
 
 export interface FormExamplesConfig {
-  initial?: string[];
+  initial?: Example[];
   placeholder?: string;
+  translationPlaceholder?: string;
 }
 
 export interface FormResult {
   /** Trimmed value of every field, by key. */
   values: Record<string, string>;
-  /** Trimmed examples, blank ones removed. Empty if examples aren't enabled. */
-  examples: string[];
+  /** Trimmed examples; rows with a blank example text are dropped. */
+  examples: Example[];
 }
 
-export interface ExampleItem {
+export interface ExampleItem extends Example {
   id: number;
-  text: string;
 }
 
 export function initialValues(fields: FormField[]): Record<string, string> {
@@ -47,6 +74,8 @@ export function buildResult(
     values: Object.fromEntries(
       fields.map(f => [f.key, (values[f.key] ?? '').trim()]),
     ),
-    examples: examples.map(e => e.text.trim()).filter(text => text !== ''),
+    examples: examples
+      .map(e => ({ text: e.text.trim(), translation: e.translation.trim() }))
+      .filter(e => e.text !== ''),
   };
 }

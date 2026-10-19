@@ -61,15 +61,15 @@ describe('form logic', () => {
     expect(canSubmit(fields, { term: 'Haus', note: '' })).toBe(true);
   });
 
-  test('result is trimmed and blank examples are dropped', () => {
+  test('result is trimmed; examples without text are dropped', () => {
     const result = buildResult(fields, { term: ' Haus ', note: '' }, [
-      { id: 1, text: '  Das Haus ist groß. ' },
-      { id: 2, text: '   ' },
-      { id: 3, text: '' },
+      { id: 1, text: '  Das Haus ist groß. ', translation: ' Дом большой. ' },
+      { id: 2, text: '   ', translation: 'only a translation' },
+      { id: 3, text: '', translation: '' },
     ]);
     expect(result).toEqual({
       values: { term: 'Haus', note: '' },
-      examples: ['Das Haus ist groß.'],
+      examples: [{ text: 'Das Haus ist groß.', translation: 'Дом большой.' }],
     });
   });
 });
@@ -106,7 +106,9 @@ describe('FormSheet', () => {
     const s = await renderSheet();
     const onSubmit = jest.fn();
     await s.act(() =>
-      s.ref.current!.open(wordForm({ title: 'New word', onSubmit })),
+      s.ref.current!.open(
+        wordForm({ title: 'New word', languageCode: 'de', onSubmit }),
+      ),
     );
 
     expect(s.inputs()).toHaveLength(2);
@@ -120,19 +122,23 @@ describe('FormSheet', () => {
     await s.act(() => s.button('+ Add example').props.onPress());
     await s.act(() => s.button('+ Add example').props.onPress());
     await s.act(() => s.button('+ Add example').props.onPress());
-    expect(s.inputs()).toHaveLength(5);
+    // Each example row has an example and a translation input.
+    expect(s.inputs()).toHaveLength(8);
 
     await s.act(() => s.input('Example 1').props.onChangeText('Wir essen.'));
+    await s.act(() =>
+      s.input('Example 1 translation').props.onChangeText('Мы едим.'),
+    );
     await s.act(() => s.input('Example 2').props.onChangeText('to remove'));
     await s.act(() => s.button('Remove example 2').props.onPress());
-    expect(s.inputs()).toHaveLength(4);
+    expect(s.inputs()).toHaveLength(6);
     // The old third example (left empty) is now "Example 2".
 
     await s.act(() => s.button('Save').props.onPress());
     expect(onSubmit).toHaveBeenCalledWith({
       term: 'essen',
       translation: 'есть',
-      examples: ['Wir essen.'],
+      examples: [{ text: 'Wir essen.', translation: 'Мы едим.' }],
     });
   });
 
@@ -142,10 +148,13 @@ describe('FormSheet', () => {
       s.ref.current!.open(
         wordForm({
           title: 'Edit word',
+          languageCode: 'de',
           initial: {
             term: 'das Essen',
             translation: 'еда',
-            examples: ['Das Essen ist fertig.'],
+            examples: [
+              { text: 'Das Essen ist fertig.', translation: 'Еда готова.' },
+            ],
           },
           onSubmit: jest.fn(),
         }),
@@ -155,6 +164,7 @@ describe('FormSheet', () => {
       'das Essen',
       'еда',
       'Das Essen ist fertig.',
+      'Еда готова.',
     ]);
   });
 
@@ -182,5 +192,61 @@ describe('FormSheet', () => {
     await open('Second');
     expect(s.inputs()).toHaveLength(1);
     expect(s.inputs()[0].props.defaultValue).toBe('Second');
+  });
+
+  test('example inputs keep a fixed defaultValue while typing', async () => {
+    const s = await renderSheet();
+    await s.act(() =>
+      s.ref.current!.open(
+        wordForm({ title: 'New word', languageCode: 'de', onSubmit: jest.fn() }),
+      ),
+    );
+    await s.act(() => s.button('+ Add example').props.onPress());
+    await s.act(() => s.input('Example 1').props.onChangeText('Wir es|sen'));
+    // A defaultValue that follows the text is sent to the native field like
+    // a controlled value (cursor jumps on Android).
+    expect(s.input('Example 1').props.defaultValue).toBe('');
+    expect(s.input('Example 1').props.value).toBeUndefined();
+  });
+
+  test('suggestions: shown for the focused field; picking sets fields', async () => {
+    jest.useFakeTimers();
+    const s = await renderSheet();
+    const load = jest.fn(async (text: string) =>
+      text.length >= 2
+        ? [{ key: '1', title: 'der Apfel, die Äpfel', subtitle: 'яблоко' }]
+        : [],
+    );
+    await s.act(() =>
+      s.ref.current!.open({
+        title: 'New word',
+        fields: [
+          {
+            key: 'term',
+            label: 'Word',
+            suggestions: {
+              load,
+              onPick: item => ({ term: item.title, translation: 'яблоко' }),
+            },
+          },
+          { key: 'translation', label: 'Translation' },
+        ],
+        onSubmit: jest.fn(),
+      }),
+    );
+    await s.act(() => s.input('Word').props.onFocus());
+    await s.act(() => s.input('Word').props.onChangeText('Apf'));
+    await s.act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+    expect(load).toHaveBeenLastCalledWith('Apf', { term: 'Apf', translation: '' });
+
+    await s.act(() =>
+      s.button('Suggestion der Apfel, die Äpfel').props.onPress(),
+    );
+    expect(s.input('Word').props.defaultValue).toBe('der Apfel, die Äpfel');
+    expect(s.input('Translation').props.defaultValue).toBe('яблоко');
+    expect(() => s.button('Suggestion der Apfel, die Äpfel')).toThrow();
+    jest.useRealTimers();
   });
 });

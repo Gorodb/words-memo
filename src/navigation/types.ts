@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { ID } from '../domain/types';
+import type { StudyModeId } from '../features/study/modes';
 
 export type FoldersStackParamList = {
   Folders: undefined;
@@ -17,6 +18,7 @@ export type TabParamList = {
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   Set: { setId: ID; title: string };
+  Study: { wordIds: ID[]; modeId: StudyModeId };
 };
 
 declare global {

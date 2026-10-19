@@ -18,6 +18,7 @@ export interface ActionMenuItem {
   label: string;
   onPress: () => void;
   destructive?: boolean;
+  disabled?: boolean;
 }
 
 export interface ActionMenuOptions {
@@ -84,9 +85,15 @@ export function ActionMenuSheet({ ref }: { ref: React.Ref<ActionMenuHandle> }) {
           <Pressable
             key={item.label}
             onPress={() => choose(item)}
+            disabled={item.disabled}
             accessibilityRole="button"
             accessibilityLabel={item.label}
-            style={({ pressed }) => [styles.item, pressed && styles.pressed]}
+            accessibilityState={{ disabled: !!item.disabled }}
+            style={({ pressed }) => [
+              styles.item,
+              pressed && styles.pressed,
+              item.disabled && styles.disabled,
+            ]}
           >
             <Text
               style={[
@@ -123,5 +130,6 @@ const styles = StyleSheet.create({
   },
   item: { paddingHorizontal: 20, paddingVertical: 14 },
   pressed: { opacity: 0.5 },
+  disabled: { opacity: 0.35 },
   itemText: { fontSize: 17 },
 });

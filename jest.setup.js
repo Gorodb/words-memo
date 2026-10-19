@@ -32,3 +32,31 @@ jest.mock('react-native-reorderable-list', () => {
     useReorderableDrag: () => () => {},
   };
 });
+
+// Native file system: dictionaries are "not installed" in tests.
+jest.mock('@dr.pogodin/react-native-fs', () => ({
+  DocumentDirectoryPath: '/documents',
+  exists: jest.fn(() => Promise.resolve(false)),
+  mkdir: jest.fn(() => Promise.resolve()),
+  moveFile: jest.fn(() => Promise.resolve()),
+  unlink: jest.fn(() => Promise.resolve()),
+  downloadFile: jest.fn(() => ({
+    jobId: 1,
+    promise: Promise.resolve({ jobId: 1, statusCode: 200, bytesWritten: 0 }),
+  })),
+}));
+
+// Needs real worklets internals; render the row without swipe behavior.
+jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
+  const React = require('react');
+  const Swipeable = React.forwardRef(({ children }, ref) => {
+    React.useImperativeHandle(ref, () => ({
+      close: () => {},
+      openLeft: () => {},
+      openRight: () => {},
+      reset: () => {},
+    }));
+    return children;
+  });
+  return { __esModule: true, default: Swipeable };
+});

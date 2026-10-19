@@ -28,7 +28,10 @@ import { readSettings, writeSetting } from '../src/db/repositories/settings';
 import {
   createWord,
   deleteWord,
+  getWords,
   listWords,
+  parseExamples,
+  setLearned,
   updateWord,
 } from '../src/db/repositories/words';
 import { openNodeSqlite } from '../test-utils/sqliteAdapter';
@@ -118,7 +121,7 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
   const word = await createWord(set.id, {
     term: ' essen ',
     translation: 'есть',
-    examples: ['Wir essen.'],
+    examples: [{ text: 'Wir essen.', translation: 'Мы едим.' }],
   });
   await createWord(set.id, { term: 'das   Essen', translation: 'еда', examples: [] });
   expect(word).toMatchObject({ term: 'essen', languageCode: 'de' });
@@ -126,12 +129,22 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
   await updateWord(word.id, {
     term: 'essen',
     translation: 'есть, кушать',
-    examples: ['Wir essen.', 'Was isst du?'],
+    examples: [
+      { text: 'Wir essen.', translation: 'Мы едим.' },
+      { text: 'Was isst du?', translation: '' },
+    ],
   });
   const words = await listWords(set.id);
   expect(words.map(w => [w.term, w.translation, w.examples])).toEqual([
     ['das   Essen', 'еда', []],
-    ['essen', 'есть, кушать', ['Wir essen.', 'Was isst du?']],
+    [
+      'essen',
+      'есть, кушать',
+      [
+        { text: 'Wir essen.', translation: 'Мы едим.' },
+        { text: 'Was isst du?', translation: '' },
+      ],
+    ],
   ]);
 
   const norms = db
@@ -141,6 +154,30 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
 
   await deleteWord(word.id);
   expect(await listWords(set.id)).toHaveLength(1);
+});
+
+test('learned words go below; toggling moves a word to the top of its part', async () => {
+  const set = await createSet('en', 'Order');
+  const make = (term: string) =>
+    createWord(set.id, { term, translation: term, examples: [] });
+  const a = await make('a');
+  await make('b');
+  const c = await make('c');
+  const terms = async () => (await listWords(set.id)).map(w => w.term);
+  expect(await terms()).toEqual(['c', 'b', 'a']); // newest first
+
+  await setLearned(a.id, true);
+  await setLearned(c.id, true);
+  // To learn: b. Learned: most recently learned on top.
+  expect(await terms()).toEqual(['b', 'c', 'a']);
+  expect((await listWords(set.id))[1].learnedAt).not.toBeNull();
+
+  await setLearned(a.id, false); // "To revise" → top of the list
+  expect(await terms()).toEqual(['a', 'b', 'c']);
+  expect((await getWords([c.id, a.id, 'missing'])).map(w => w.term)).toEqual([
+    'c',
+    'a',
+  ]);
 });
 
 test('settings upsert', () => {
@@ -167,7 +204,7 @@ test('migration v1 → v2 keeps sets and words and turns ownership into pins', (
     [t, t],
   );
 
-  migrate(raw);
+  migrate(raw, 2);
 
   const rows = (q: string) => raw.executeSync(q).rows;
   expect(rows('PRAGMA user_version')[0].user_version).toBe(2);
@@ -189,4 +226,44 @@ test('migration v1 → v2 keeps sets and words and turns ownership into pins', (
   raw.executeSync("DELETE FROM sets WHERE id = 's1'");
   expect(rows('SELECT id FROM words')).toEqual([]);
   expect(rows('PRAGMA foreign_keys')[0].foreign_keys).toBe(1);
+});
+
+test('migration v2 → v3: examples become pairs, sort order from creation time', () => {
+  const raw = openNodeSqlite() as unknown as DB;
+  raw.executeSync('PRAGMA foreign_keys = ON');
+  migrate(raw, 2);
+  raw.executeSync("INSERT INTO sets VALUES ('s1', 'de', 'Set', 1, 1)");
+  raw.executeSync(
+    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, created_at, updated_at)
+     VALUES ('w1', 's1', 'de', 'essen', 'essen', 'есть', ?, 5, 5),
+            ('w2', 's1', 'de', 'gehen', 'gehen', 'идти', '[]', 7, 7)`,
+    [JSON.stringify(['Wir essen.', 'Ich esse.'])],
+  );
+
+  migrate(raw);
+
+  const rows = raw.executeSync(
+    'SELECT id, examples_json, sort_at, learned_at FROM words ORDER BY id',
+  ).rows;
+  expect(rows).toEqual([
+    {
+      id: 'w1',
+      examples_json: JSON.stringify([
+        { text: 'Wir essen.', translation: '' },
+        { text: 'Ich esse.', translation: '' },
+      ]),
+      sort_at: 5,
+      learned_at: null,
+    },
+    { id: 'w2', examples_json: '[]', sort_at: 7, learned_at: null },
+  ]);
+  expect(raw.executeSync('PRAGMA user_version').rows[0].user_version).toBe(3);
+});
+
+test('parseExamples accepts legacy strings and pairs', () => {
+  expect(parseExamples('["a", {"text": "b", "translation": "б"}]')).toEqual([
+    { text: 'a', translation: '' },
+    { text: 'b', translation: 'б' },
+  ]);
+  expect(parseExamples('not json')).toEqual([]);
 });

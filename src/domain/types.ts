@@ -8,18 +8,12 @@ export type LanguageCode = string;
 /** Milliseconds since epoch. */
 export type Timestamp = number;
 
-export type DictionaryStatus =
-  | 'bundled' // shipped with the app (en, de)
-  | 'installed' // downloaded by the user
-  | 'available'; // can be downloaded from the catalog
-
 export interface Language {
   code: LanguageCode;
   /** English name, e.g. "German". */
   name: string;
   /** Native name, e.g. "Deutsch". */
   nativeName: string;
-  dictionaryStatus: DictionaryStatus;
 }
 
 /** A user-ordered group that pins any number of sets of its language. */
@@ -45,6 +39,13 @@ export interface WordSet {
   updatedAt: Timestamp;
 }
 
+export interface Example {
+  /** Sentence in the learned language. */
+  text: string;
+  /** Its Russian translation (may be empty). */
+  translation: string;
+}
+
 export interface Word {
   id: ID;
   setId: ID;
@@ -54,7 +55,9 @@ export interface Word {
   /** Russian translation. */
   translation: string;
   /** Any number of usage examples, typed or pasted. */
-  examples: string[];
+  examples: Example[];
+  /** When the word was marked as learned; null = still to learn. */
+  learnedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -80,7 +83,12 @@ export interface BackupFile {
         words: Array<
           Pick<
             Word,
-            'term' | 'translation' | 'examples' | 'createdAt' | 'updatedAt'
+            | 'term'
+            | 'translation'
+            | 'examples'
+            | 'learnedAt'
+            | 'createdAt'
+            | 'updatedAt'
           >
         >;
       }

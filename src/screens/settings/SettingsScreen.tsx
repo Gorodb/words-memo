@@ -3,6 +3,7 @@ import { ScrollView } from 'react-native';
 import { Check, Download, Upload } from 'lucide-react-native';
 import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
+import { DICTIONARY_ATTRIBUTION } from '../../config/languages';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { ThemeMode } from '../../domain/types';
@@ -47,6 +48,9 @@ export function SettingsScreen() {
         // TODO(step 4): pick file, validate, merge by (language, term)
         right={<Download color={colors.textSecondary} size={20} />}
       />
+
+      <SectionHeader title="About" />
+      <ListRow title="Dictionaries" subtitle={DICTIONARY_ATTRIBUTION} />
     </ScrollView>
   );
 }

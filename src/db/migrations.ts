@@ -74,6 +74,17 @@ const MIGRATIONS: string[][] = [
     'CREATE INDEX idx_sets_language ON sets (language_code)',
     'CREATE INDEX idx_folder_sets_set ON folder_sets (set_id)',
   ],
+  // v3: learned state, manual list order, examples become {text, translation} pairs.
+  [
+    'ALTER TABLE words ADD COLUMN learned_at INTEGER',
+    'ALTER TABLE words ADD COLUMN sort_at INTEGER NOT NULL DEFAULT 0',
+    'UPDATE words SET sort_at = created_at',
+    `UPDATE words SET examples_json = (
+      SELECT COALESCE(json_group_array(json_object('text', value, 'translation', '')), '[]')
+      FROM json_each(words.examples_json)
+      WHERE json_each.type = 'text'
+    )`,
+  ],
 ];
 
 /**
