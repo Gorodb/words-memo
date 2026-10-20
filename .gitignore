@@ -76,3 +76,6 @@ yarn-error.log
 
 # Dictionaries: raw DSL sources and generated .db files (downloaded/built, not committed)
 /dictionaries/
+
+# Release builds
+/dist/

@@ -10,7 +10,8 @@
     "test": "jest",
     "dict:fetch": "node scripts/dictionary/fetch.ts",
     "dict:build": "node --max-old-space-size=4096 scripts/dictionary/build.ts",
-    "brand": "node scripts/brand/generate.ts"
+    "brand": "node scripts/brand/generate.ts",
+    "android:release": "node scripts/android-release.ts"
   },
   "dependencies": {
     "@dr.pogodin/react-native-fs": "^2.40.4",

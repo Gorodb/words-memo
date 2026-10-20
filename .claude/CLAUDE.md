@@ -20,8 +20,11 @@ cd android && ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a   # f
 npm run dict:fetch             # download Wiktionary sources (~1.3 GB) into dictionaries/source/
 npm run dict:build             # build dictionaries/build/<lang>-ru.db (~20 s)
 node scripts/dictionary/query.ts de essen Apf   # try lookups against a built dictionary
+npm run android:release        # release APKs per ABI → dist/words-memo-<versionName>-arm64.apk / -armv7.apk (signing: WORDS_UPLOAD_* in ~/.gradle/gradle.properties)
 npm run brand                  # regenerate launcher icons from scripts/brand/artwork.ts (then re-run the bootsplash command it prints)
 ```
+
+Release signing: `android/app/build.gradle` uses the upload key from the `WORDS_UPLOAD_*` gradle properties and falls back to the debug key with a warning. Updates must always be signed with the same key: a key change forces an uninstall, which deletes the user's local words. Bump `versionCode` and `versionName` in `android/app/build.gradle` for every release you install over an older one. ABI splits (arm64-v8a, armeabi-v7a) are enabled only for release tasks.
 
 Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 needs `react-native-worklets/plugin` to stay **last** in `babel.config.js`. `react-native-gesture-handler` is pinned to 2.x on purpose, because `@gorhom/bottom-sheet` 5 targets the v2 API. Don't upgrade it to 3.x.
 
