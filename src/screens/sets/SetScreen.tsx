@@ -19,7 +19,8 @@ import { TextButton } from '../../components/TextButton';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { nameForm, wordForm } from '../../components/formSheet/forms';
 import { BUNDLED_LANGUAGES } from '../../config/languages';
-import { getSet, renameSet } from '../../db/repositories/sets';
+import { getSet, renameSet, setSetPinned } from '../../db/repositories/sets';
+import { pinLabel, togglePinned } from '../../components/itemActions';
 import {
   createWord,
   deleteWord,
@@ -133,6 +134,10 @@ export function SetScreen({ navigation, route }: Props) {
     openMenu({
       title: set.name,
       items: [
+        {
+          label: pinLabel(set.pinnedAt),
+          onPress: () => togglePinned(setSetPinned, set),
+        },
         {
           label: 'Edit set',
           onPress: () =>

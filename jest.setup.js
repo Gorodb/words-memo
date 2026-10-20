@@ -60,3 +60,8 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
   });
   return { __esModule: true, default: Swipeable };
 });
+
+jest.mock('react-native-bootsplash', () => ({
+  __esModule: true,
+  default: { hide: jest.fn(() => Promise.resolve()), isVisible: jest.fn() },
+}));

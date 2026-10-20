@@ -10,15 +10,26 @@ import { useActionMenu } from '../../components/ActionMenuSheet';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { ListRow } from '../../components/ListRow';
-import { confirmDelete } from '../../components/itemActions';
+import {
+  confirmDelete,
+  pinLabel,
+  togglePinned,
+} from '../../components/itemActions';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { nameForm } from '../../components/formSheet/forms';
 import {
   deleteFolder,
   getFolder,
   renameFolder,
+  setFolderPinned,
 } from '../../db/repositories/folders';
-import { createSet, listSetsInFolder } from '../../db/repositories/sets';
+import {
+  createSet,
+  listSetsInFolder,
+  setInFolder,
+  setSetPinned,
+  type WordSetWithCount,
+} from '../../db/repositories/sets';
 import { useQuery } from '../../db/useQuery';
 import { useSettingsStore } from '../../store/settingsStore';
 import { plural } from '../../utils/plural';
@@ -84,6 +95,10 @@ export function FolderScreen({ navigation, route }: Props) {
       title: folder.name,
       items: [
         {
+          label: pinLabel(folder.pinnedAt),
+          onPress: () => togglePinned(setFolderPinned, folder),
+        },
+        {
           label: 'Edit',
           onPress: () =>
             openForm(
@@ -108,6 +123,22 @@ export function FolderScreen({ navigation, route }: Props) {
       ],
     });
   }, [openMenu, openForm, folder]);
+
+  const openSetMenu = (set: WordSetWithCount) =>
+    openMenu({
+      title: set.name,
+      items: [
+        {
+          label: pinLabel(set.pinnedAt),
+          onPress: () => togglePinned(setSetPinned, set),
+        },
+        {
+          label: 'Remove from folder',
+          destructive: true,
+          onPress: () => setInFolder(folderId, set.id, false),
+        },
+      ],
+    });
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -139,6 +170,7 @@ export function FolderScreen({ navigation, route }: Props) {
           <ListRow
             title={item.name}
             subtitle={plural(item.wordCount, 'word')}
+            pinned={item.pinnedAt !== null}
             chevron
             onPress={() =>
               rootNavigation.navigate('Set', {
@@ -146,6 +178,7 @@ export function FolderScreen({ navigation, route }: Props) {
                 title: item.name,
               })
             }
+            onLongPress={() => openSetMenu(item)}
           />
         )}
         ListEmptyComponent={

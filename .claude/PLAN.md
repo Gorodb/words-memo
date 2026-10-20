@@ -8,8 +8,8 @@ Offline React Native app (no backend, no login) for learning English and German 
 Language (en, de, +downloadable)
  ├─ WordSet           (belongs to the language; exists on its own)
  │   └─ Word
- └─ Folder            (manual drag-and-drop order; pins any number of sets)
-     ┄ pinned sets    (many-to-many; removing a folder only unpins)
+ └─ Folder            (manual drag-and-drop order; contains any number of sets)
+     ┄ sets           (many-to-many; removing a folder keeps its sets)
          └─ Word      term · translation · examples[{text, translation}] · learned
 ```
 
@@ -86,9 +86,9 @@ Words are **not unique**: the same term can be in several sets of one language.
 
 ## Backup
 
-- **Export**: one JSON file (`BackupFile` in `domain/types.ts`, versioned). For each language it holds the sets with their words, plus the folders in their manual order, each listing the names of its pinned sets.
+- **Export**: one JSON file (`BackupFile` in `domain/types.ts`, versioned). For each language it holds the sets with their words, plus the folders in their manual order, each listing the names of its sets.
 - **Import** (merge, never wipes data). For each language in the file:
-  1. Find each set by name, or create it. Do the same for folders, and pin the listed sets to them.
+  1. Find each set by name, or create it. Do the same for folders, and add the listed sets to them.
   2. For each word, look it up by exact `(language_code, term_norm)`:
      - **found**: fully replace translation and examples on **every** matching word. Each one stays in its current set.
      - **not found**: insert it into the set from the backup.
@@ -147,5 +147,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 - Dictionaries come from Wiktionary, are kept out of git, and are downloaded by the app (GitHub Release).
 - Writing modes check the whole string (case-insensitive), and "Mark as correct" covers typos or a missing article.
 - "Hide learned" in study is session-only.
-- Sets are independent of folders. A folder pins sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are pinned to it.
+- Sets are independent of folders. A folder contains sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are added to it.
 - Folders are sorted manually with drag and drop. New folders go to the end.
+- Up to 5 folders and 5 sets per language can be pinned to the top of their lists. Use the "⋯" menu on a folder or set screen, or long-press a set.
+- App icon: fanned flashcards with a teal "learned" check on an indigo → violet gradient. The splash screen shows the same mark on #6A5DF0.

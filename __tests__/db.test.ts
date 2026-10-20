@@ -15,6 +15,7 @@ import {
   listFolders,
   renameFolder,
   reorderFolders,
+  setFolderPinned,
 } from '../src/db/repositories/folders';
 import {
   createSet,
@@ -22,7 +23,8 @@ import {
   listSets,
   listSetsForPicker,
   listSetsInFolder,
-  setPinned,
+  setInFolder,
+  setSetPinned,
 } from '../src/db/repositories/sets';
 import { readSettings, writeSetting } from '../src/db/repositories/settings';
 import {
@@ -34,6 +36,7 @@ import {
   setLearned,
   updateWord,
 } from '../src/db/repositories/words';
+import { MAX_PINNED, PinLimitError } from '../src/domain/pinning';
 import { openNodeSqlite } from '../test-utils/sqliteAdapter';
 
 let db: DB;
@@ -83,23 +86,23 @@ describe('folders', () => {
 });
 
 describe('sets', () => {
-  test('pin / unpin from the picker; a set can be in several folders', async () => {
+  test('add / remove from the picker; a set can be in several folders', async () => {
     const f1 = await createFolder('en', 'Folder 1');
     const f2 = await createFolder('en', 'Folder 2');
     const set = await createSet('en', 'Verbs');
     await createSet('en', 'Adjectives');
 
     let picker = await listSetsForPicker(f1.id, 'en');
-    expect(picker.find(s => s.id === set.id)?.pinned).toBe(false);
+    expect(picker.find(s => s.id === set.id)?.inFolder).toBe(false);
 
-    await setPinned(f1.id, set.id, true);
-    await setPinned(f1.id, set.id, true); // idempotent
-    await setPinned(f2.id, set.id, true);
+    await setInFolder(f1.id, set.id, true);
+    await setInFolder(f1.id, set.id, true); // idempotent
+    await setInFolder(f2.id, set.id, true);
     picker = await listSetsForPicker(f1.id, 'en');
-    expect(picker.find(s => s.id === set.id)?.pinned).toBe(true);
+    expect(picker.find(s => s.id === set.id)?.inFolder).toBe(true);
     expect((await listSetsInFolder(f2.id)).map(s => s.name)).toEqual(['Verbs']);
 
-    await setPinned(f1.id, set.id, false);
+    await setInFolder(f1.id, set.id, false);
     expect(await listSetsInFolder(f1.id)).toEqual([]);
     expect(await listSetsInFolder(f2.id)).toHaveLength(1);
   });
@@ -240,7 +243,7 @@ test('migration v2 → v3: examples become pairs, sort order from creation time'
     [JSON.stringify(['Wir essen.', 'Ich esse.'])],
   );
 
-  migrate(raw);
+  migrate(raw, 3);
 
   const rows = raw.executeSync(
     'SELECT id, examples_json, sort_at, learned_at FROM words ORDER BY id',
@@ -266,4 +269,69 @@ test('parseExamples accepts legacy strings and pairs', () => {
     { text: 'b', translation: 'б' },
   ]);
   expect(parseExamples('not json')).toEqual([]);
+});
+
+describe('pin to top', () => {
+  test('pinned folders come first (in manual order); limit is per language', async () => {
+    const lang = 'pin-f';
+    const folders = [];
+    for (let i = 0; i < MAX_PINNED + 2; i++) {
+      folders.push(await createFolder(lang, `F${i}`));
+    }
+    await setFolderPinned(folders[4].id, true);
+    await setFolderPinned(folders[2].id, true);
+    const names = async () => (await listFolders(lang)).map(f => f.name);
+    expect(await names()).toEqual(['F2', 'F4', 'F0', 'F1', 'F3', 'F5', 'F6']);
+
+    for (const f of folders.slice(0, MAX_PINNED)) {
+      await setFolderPinned(f.id, true); // re-pinning is a no-op
+    }
+    await expect(setFolderPinned(folders[5].id, true)).rejects.toBeInstanceOf(
+      PinLimitError,
+    );
+    // Other languages have their own limit.
+    const other = await createFolder('pin-f2', 'Other');
+    await setFolderPinned(other.id, true);
+
+    await setFolderPinned(folders[0].id, false);
+    await setFolderPinned(folders[5].id, true);
+    expect((await listFolders(lang)).filter(f => f.pinnedAt).length).toBe(
+      MAX_PINNED,
+    );
+  });
+
+  test('pinned sets come first in the Sets tab, folders and the picker', async () => {
+    const lang = 'pin-s';
+    const folder = await createFolder(lang, 'Folder');
+    const a = await createSet(lang, 'Alpha', folder.id);
+    const b = await createSet(lang, 'Beta', folder.id);
+    const c = await createSet(lang, 'Gamma', folder.id);
+    await setSetPinned(c.id, true);
+    await setSetPinned(b.id, true);
+
+    const expected = ['Beta', 'Gamma', 'Alpha'];
+    expect((await listSets(lang)).map(x => x.name)).toEqual(expected);
+    expect((await listSetsInFolder(folder.id)).map(x => x.name)).toEqual(
+      expected,
+    );
+    expect(
+      (await listSetsForPicker(folder.id, lang)).map(x => x.name),
+    ).toEqual(expected);
+
+    await setSetPinned(b.id, false);
+    const sets = await listSets(lang);
+    expect(sets.map(x => [x.name, x.pinnedAt !== null])).toEqual([
+      ['Gamma', true],
+      ['Alpha', false],
+      ['Beta', false],
+    ]);
+    expect(a.pinnedAt).toBeNull();
+
+    for (let i = 0; i < MAX_PINNED - 1; i++) {
+      await setSetPinned((await createSet(lang, `S${i}`)).id, true);
+    }
+    await expect(setSetPinned(a.id, true)).rejects.toThrow(
+      `You can pin up to ${MAX_PINNED} sets`,
+    );
+  });
 });

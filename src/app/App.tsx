@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import BootSplash from 'react-native-bootsplash';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { ThemeProvider, useAppTheme } from '../theme/ThemeProvider';
 import { bootstrap } from './bootstrap';
@@ -11,7 +12,10 @@ import { bootstrap } from './bootstrap';
 function ThemedApp() {
   const { isDark, navigationTheme } = useAppTheme();
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer
+      theme={navigationTheme}
+      onReady={() => BootSplash.hide({ fade: true })}
+    >
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <BottomSheetModalProvider>
         <RootNavigator />
@@ -21,6 +25,9 @@ function ThemedApp() {
 }
 
 function StartupError({ error }: { error: Error }) {
+  useEffect(() => {
+    BootSplash.hide({ fade: true });
+  }, []);
   return (
     <View style={styles.error}>
       <Text style={styles.errorTitle}>Could not open the database</Text>

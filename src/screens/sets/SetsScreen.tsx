@@ -7,7 +7,12 @@ import { Plus } from 'lucide-react-native';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { ListRow } from '../../components/ListRow';
-import { showItemActions } from '../../components/itemActions';
+import { useActionMenu } from '../../components/ActionMenuSheet';
+import {
+  confirmDelete,
+  pinLabel,
+  togglePinned,
+} from '../../components/itemActions';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { nameForm } from '../../components/formSheet/forms';
 import {
@@ -15,6 +20,7 @@ import {
   deleteSet,
   listSets,
   renameSet,
+  setSetPinned,
   type WordSetWithCount,
 } from '../../db/repositories/sets';
 import { useQuery } from '../../db/useQuery';
@@ -22,7 +28,7 @@ import { useActiveLanguage } from '../../store/useActiveLanguage';
 import { plural } from '../../utils/plural';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 
-/** All sets of the active language, whether pinned to folders or not. */
+/** All sets of the active language, whether in folders or not. Pinned sets first. */
 export function SetsScreen() {
   const tabNavigation =
     useNavigation<BottomTabNavigationProp<TabParamList, 'SetsTab'>>();
@@ -31,6 +37,7 @@ export function SetsScreen() {
   const language = useActiveLanguage();
   const form = useFormSheet();
   const openForm = form.open;
+  const menu = useActionMenu();
 
   const load = useCallback(() => listSets(language.code), [language.code]);
   const { data: sets } = useQuery(load, ['sets', 'words']);
@@ -62,22 +69,38 @@ export function SetsScreen() {
   }, [tabNavigation, openCreate]);
 
   const onLongPress = (set: WordSetWithCount) =>
-    showItemActions({
-      name: set.name,
-      onRename: () =>
-        openForm(
-          nameForm({
-            title: 'Rename set',
-            placeholder: 'Set name',
-            initialValue: set.name,
-            onSubmit: name => renameSet(set.id, name),
-          }),
-        ),
-      deleteWarning:
-        set.wordCount > 0
-          ? `${plural(set.wordCount, 'word')} will be deleted, and the set will be removed from all folders.`
-          : 'The set will be removed from all folders.',
-      onDelete: () => deleteSet(set.id),
+    menu.open({
+      title: set.name,
+      items: [
+        {
+          label: pinLabel(set.pinnedAt),
+          onPress: () => togglePinned(setSetPinned, set),
+        },
+        {
+          label: 'Rename',
+          onPress: () =>
+            openForm(
+              nameForm({
+                title: 'Rename set',
+                placeholder: 'Set name',
+                initialValue: set.name,
+                onSubmit: name => renameSet(set.id, name),
+              }),
+            ),
+        },
+        {
+          label: 'Delete',
+          destructive: true,
+          onPress: () =>
+            confirmDelete(
+              set.name,
+              set.wordCount > 0
+                ? `${plural(set.wordCount, 'word')} will be deleted, and the set will be removed from all folders.`
+                : 'The set will be removed from all folders.',
+              () => deleteSet(set.id),
+            ),
+        },
+      ],
     });
 
   return (
@@ -90,6 +113,7 @@ export function SetsScreen() {
           <ListRow
             title={item.name}
             subtitle={plural(item.wordCount, 'word')}
+            pinned={item.pinnedAt !== null}
             chevron
             onPress={() =>
               rootNavigation.navigate('Set', {
@@ -109,6 +133,7 @@ export function SetsScreen() {
           ) : undefined
         }
       />
+      {menu.element}
       {form.element}
     </>
   );

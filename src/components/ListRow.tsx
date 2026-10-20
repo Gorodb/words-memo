@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Pin } from 'lucide-react-native';
 import { useAppTheme } from '../theme/ThemeProvider';
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   right?: React.ReactNode;
   /** Shows a chevron, for rows that open another screen. */
   chevron?: boolean;
+  /** Shows a pin before the title (pinned to the top of the list). */
+  pinned?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;
 }
@@ -18,6 +20,7 @@ export function ListRow({
   subtitle,
   right,
   chevron,
+  pinned,
   onPress,
   onLongPress,
 }: Props) {
@@ -34,7 +37,17 @@ export function ListRow({
       ]}
     >
       <View style={styles.text}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        <View style={styles.titleRow}>
+          {pinned ? (
+            <Pin
+              color={colors.primary}
+              fill={colors.primary}
+              size={14}
+              accessibilityLabel="Pinned"
+            />
+          ) : null}
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        </View>
         {subtitle ? (
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {subtitle}
@@ -59,6 +72,7 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.6 },
   text: { flex: 1 },
-  title: { fontSize: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  title: { fontSize: 16, flexShrink: 1 },
   subtitle: { fontSize: 13, marginTop: 2 },
 });

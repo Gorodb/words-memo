@@ -85,6 +85,11 @@ const MIGRATIONS: string[][] = [
       WHERE json_each.type = 'text'
     )`,
   ],
+  // v4: pin up to MAX_PINNED folders / sets per language to the top of lists.
+  [
+    'ALTER TABLE folders ADD COLUMN pinned_at INTEGER',
+    'ALTER TABLE sets ADD COLUMN pinned_at INTEGER',
+  ],
 ];
 
 /**

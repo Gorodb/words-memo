@@ -1,4 +1,6 @@
 import { Alert } from 'react-native';
+import { PinLimitError } from '../domain/pinning';
+import type { ID } from '../domain/types';
 
 /** "Delete X?" confirmation with a destructive Delete button. */
 export function confirmDelete(
@@ -12,28 +14,22 @@ export function confirmDelete(
   ]);
 }
 
-interface ItemActionsOptions {
-  name: string;
-  onRename: () => void;
-  /** Shown in the delete confirmation, e.g. "All its sets and words will be deleted." */
-  deleteWarning: string;
-  onDelete: () => void | Promise<void>;
-}
+/** Menu label for pinning an item to the top of its list. */
+export const pinLabel = (pinnedAt: number | null) =>
+  pinnedAt === null ? 'Pin to top' : 'Unpin from top';
 
-/** Long-press menu for list items: Rename / Delete (with confirmation). */
-export function showItemActions({
-  name,
-  onRename,
-  deleteWarning,
-  onDelete,
-}: ItemActionsOptions): void {
-  Alert.alert(name, undefined, [
-    { text: 'Rename', onPress: onRename },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: () => confirmDelete(name, deleteWarning, onDelete),
-    },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
+/** Toggles the pin; explains the limit instead of failing when it's reached. */
+export async function togglePinned(
+  setPinned: (id: ID, pinned: boolean) => Promise<void>,
+  item: { id: ID; pinnedAt: number | null },
+): Promise<void> {
+  try {
+    await setPinned(item.id, item.pinnedAt === null);
+  } catch (e) {
+    if (e instanceof PinLimitError) {
+      Alert.alert('Pin limit reached', e.message);
+    } else {
+      throw e;
+    }
+  }
 }

@@ -16,25 +16,29 @@ export interface Language {
   nativeName: string;
 }
 
-/** A user-ordered group that pins any number of sets of its language. */
+/** A user-ordered group that contains any number of sets of its language. */
 export interface Folder {
   id: ID;
   languageCode: LanguageCode;
   name: string;
   /** Manual sort order within the language (drag and drop). */
   position: number;
+  /** Pinned to the top of the list; null = not pinned. */
+  pinnedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 
 /**
- * Sets exist on their own (per language). A set can be pinned to several
- * folders; removing a folder only unpins its sets.
+ * Sets exist on their own (per language). A set can be in several folders;
+ * removing a folder only removes its sets from it.
  */
 export interface WordSet {
   id: ID;
   languageCode: LanguageCode;
   name: string;
+  /** Pinned to the top of the lists; null = not pinned. */
+  pinnedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -74,7 +78,7 @@ export interface BackupFile {
   exportedAt: Timestamp;
   languages: Array<{
     code: LanguageCode;
-    /** Folders in manual order; each lists the names of its pinned sets. */
+    /** Folders in manual order; each lists the names of its sets. */
     folders: Array<
       Pick<Folder, 'name' | 'createdAt' | 'updatedAt'> & { setNames: string[] }
     >;

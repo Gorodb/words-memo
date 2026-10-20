@@ -1,4 +1,5 @@
 import type { Scalar } from '@op-engineering/op-sqlite';
+import { MAX_PINNED, PinLimitError } from '../../domain/pinning';
 import type { ID, LanguageCode, WordSet } from '../../domain/types';
 import { createId } from '../../utils/id';
 import { notifyChanged } from '../changes';
@@ -9,8 +10,8 @@ export interface WordSetWithCount extends WordSet {
 }
 
 export interface PickableSet extends WordSetWithCount {
-  /** Whether the set is pinned to the folder the picker was opened for. */
-  pinned: boolean;
+  /** Whether the set is in the folder the picker was opened for. */
+  inFolder: boolean;
 }
 
 type Row = Record<string, Scalar>;
@@ -20,6 +21,7 @@ function toSet(row: Row): WordSet {
     id: row.id as string,
     languageCode: row.language_code as string,
     name: row.name as string,
+    pinnedAt: (row.pinned_at as number | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
@@ -40,7 +42,7 @@ export async function listSets(
     `SELECT s.*, ${WORD_COUNT}
      FROM sets s
      WHERE s.language_code = ?
-     ORDER BY s.name COLLATE NOCASE`,
+     ORDER BY s.pinned_at IS NULL, s.name COLLATE NOCASE`,
     [languageCode],
   );
   return rows.map(toSetWithCount);
@@ -55,7 +57,7 @@ export async function listSetsInFolder(
      FROM sets s
      JOIN folder_sets fs ON fs.set_id = s.id
      WHERE fs.folder_id = ?
-     ORDER BY s.name COLLATE NOCASE`,
+     ORDER BY s.pinned_at IS NULL, s.name COLLATE NOCASE`,
     [folderId],
   );
   return rows.map(toSetWithCount);
@@ -68,13 +70,13 @@ export async function listSetsForPicker(
 ): Promise<PickableSet[]> {
   const { rows } = await getDb().execute(
     `SELECT s.*, ${WORD_COUNT},
-       EXISTS (SELECT 1 FROM folder_sets fs WHERE fs.folder_id = ? AND fs.set_id = s.id) AS pinned
+       EXISTS (SELECT 1 FROM folder_sets fs WHERE fs.folder_id = ? AND fs.set_id = s.id) AS in_folder
      FROM sets s
      WHERE s.language_code = ?
-     ORDER BY s.name COLLATE NOCASE`,
+     ORDER BY s.pinned_at IS NULL, s.name COLLATE NOCASE`,
     [folderId, languageCode],
   );
-  return rows.map(row => ({ ...toSetWithCount(row), pinned: !!row.pinned }));
+  return rows.map(row => ({ ...toSetWithCount(row), inFolder: !!row.in_folder }));
 }
 
 export async function getSet(id: ID): Promise<WordSet | null> {
@@ -84,17 +86,18 @@ export async function getSet(id: ID): Promise<WordSet | null> {
   return rows[0] ? toSet(rows[0]) : null;
 }
 
-/** Creates a set; with `pinTo`, also pins it to that folder. */
+/** Creates a set; with `addToFolder`, also adds it to that folder. */
 export async function createSet(
   languageCode: LanguageCode,
   name: string,
-  pinTo?: ID,
+  addToFolder?: ID,
 ): Promise<WordSet> {
   const now = Date.now();
   const set: WordSet = {
     id: createId(),
     languageCode,
     name: name.trim(),
+    pinnedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -103,14 +106,14 @@ export async function createSet(
       'INSERT INTO sets (id, language_code, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
       [set.id, languageCode, set.name, now, now],
     );
-    if (pinTo) {
+    if (addToFolder) {
       await tx.execute(
         'INSERT INTO folder_sets (folder_id, set_id, added_at) VALUES (?, ?, ?)',
-        [pinTo, set.id, now],
+        [addToFolder, set.id, now],
       );
     }
   });
-  if (pinTo) {
+  if (addToFolder) {
     notifyChanged('sets', 'folder_sets');
   } else {
     notifyChanged('sets');
@@ -132,16 +135,38 @@ export async function deleteSet(id: ID): Promise<void> {
   notifyChanged('sets', 'folder_sets', 'words');
 }
 
-export async function setPinned(
+/** Pins / unpins a set; throws PinLimitError above MAX_PINNED per language. */
+export async function setSetPinned(id: ID, pinned: boolean): Promise<void> {
+  const db = getDb();
+  if (pinned) {
+    const { rows } = await db.execute(
+      `SELECT COUNT(*) AS n FROM sets
+       WHERE pinned_at IS NOT NULL AND id <> ?
+         AND language_code = (SELECT language_code FROM sets WHERE id = ?)`,
+      [id, id],
+    );
+    if ((rows[0].n as number) >= MAX_PINNED) {
+      throw new PinLimitError('sets');
+    }
+  }
+  await db.execute(
+    'UPDATE sets SET pinned_at = CASE WHEN ? THEN COALESCE(pinned_at, ?) ELSE NULL END WHERE id = ?',
+    [pinned ? 1 : 0, Date.now(), id],
+  );
+  notifyChanged('sets');
+}
+
+/** Adds the set to the folder or removes it from there (the set itself stays). */
+export async function setInFolder(
   folderId: ID,
   setId: ID,
-  pinned: boolean,
+  inFolder: boolean,
 ): Promise<void> {
   await getDb().execute(
-    pinned
+    inFolder
       ? 'INSERT OR IGNORE INTO folder_sets (folder_id, set_id, added_at) VALUES (?, ?, ?)'
       : 'DELETE FROM folder_sets WHERE folder_id = ? AND set_id = ?',
-    pinned ? [folderId, setId, Date.now()] : [folderId, setId],
+    inFolder ? [folderId, setId, Date.now()] : [folderId, setId],
   );
   notifyChanged('folder_sets');
 }

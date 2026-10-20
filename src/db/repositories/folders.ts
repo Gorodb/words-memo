@@ -1,4 +1,5 @@
 import type { Scalar } from '@op-engineering/op-sqlite';
+import { MAX_PINNED, PinLimitError } from '../../domain/pinning';
 import type { Folder, ID, LanguageCode } from '../../domain/types';
 import { createId } from '../../utils/id';
 import { notifyChanged } from '../changes';
@@ -16,12 +17,13 @@ function toFolder(row: Row): Folder {
     languageCode: row.language_code as string,
     name: row.name as string,
     position: row.position as number,
+    pinnedAt: (row.pinned_at as number | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
 }
 
-/** In the user's manual (drag and drop) order. */
+/** Pinned folders first, each part in the user's manual (drag and drop) order. */
 export async function listFolders(
   languageCode: LanguageCode,
 ): Promise<FolderWithCount[]> {
@@ -29,7 +31,7 @@ export async function listFolders(
     `SELECT f.*, (SELECT COUNT(*) FROM folder_sets fs WHERE fs.folder_id = f.id) AS set_count
      FROM folders f
      WHERE f.language_code = ?
-     ORDER BY f.position, f.created_at`,
+     ORDER BY f.pinned_at IS NULL, f.position, f.created_at`,
     [languageCode],
   );
   return rows.map(row => ({
@@ -62,6 +64,7 @@ export async function createFolder(
     languageCode,
     name: name.trim(),
     position: rows[0].next as number,
+    pinnedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -77,6 +80,27 @@ export async function renameFolder(id: ID, name: string): Promise<void> {
   await getDb().execute(
     'UPDATE folders SET name = ?, updated_at = ? WHERE id = ?',
     [name.trim(), Date.now(), id],
+  );
+  notifyChanged('folders');
+}
+
+/** Pins / unpins a folder; throws PinLimitError above MAX_PINNED per language. */
+export async function setFolderPinned(id: ID, pinned: boolean): Promise<void> {
+  const db = getDb();
+  if (pinned) {
+    const { rows } = await db.execute(
+      `SELECT COUNT(*) AS n FROM folders
+       WHERE pinned_at IS NOT NULL AND id <> ?
+         AND language_code = (SELECT language_code FROM folders WHERE id = ?)`,
+      [id, id],
+    );
+    if ((rows[0].n as number) >= MAX_PINNED) {
+      throw new PinLimitError('folders');
+    }
+  }
+  await db.execute(
+    'UPDATE folders SET pinned_at = CASE WHEN ? THEN COALESCE(pinned_at, ?) ELSE NULL END WHERE id = ?',
+    [pinned ? 1 : 0, Date.now(), id],
   );
   notifyChanged('folders');
 }

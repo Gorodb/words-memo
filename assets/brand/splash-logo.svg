@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B7CFA"/>
+      <stop offset="1" stop-color="#7B3FE4"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.2" r="0.7">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF1FF"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#1B1464" flood-opacity="0.35"/>
+    </filter>
+    <filter id="badgeShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0B3D35" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g transform="translate(512 500) scale(1.248780487804878)">
+  <g opacity="0.28" transform="rotate(-14)">
+    <rect x="-215" y="-280" width="400" height="520" rx="56" fill="#FFFFFF"/>
+  </g>
+  <g opacity="0.5" transform="rotate(-5)">
+    <rect x="-205" y="-275" width="400" height="520" rx="56" fill="#FFFFFF"/>
+  </g>
+  <g transform="rotate(5)" filter="url(#cardShadow)">
+    <rect x="-195" y="-270" width="400" height="520" rx="56" fill="url(#card)"/>
+    <rect x="-125" y="-180" width="200" height="40" rx="20" fill="#5B6CF5"/>
+    <rect x="-125" y="-105" width="260" height="26" rx="13" fill="#C9D1FB"/>
+    <rect x="-125" y="-55" width="190" height="26" rx="13" fill="#C9D1FB"/>
+    <rect x="-125" y="25" width="250" height="20" rx="10" fill="#C9D1FB" opacity="0.6"/>
+    <rect x="-125" y="65" width="160" height="20" rx="10" fill="#C9D1FB" opacity="0.6"/>
+  </g>
+  <g transform="translate(165 205)" filter="url(#badgeShadow)">
+    <circle r="112" fill="#22C3A6" stroke="#FFFFFF" stroke-width="20"/>
+    <path d="M -50 4 L -14 40 L 54 -32" fill="none" stroke="#FFFFFF"
+      stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></g>
+</svg>

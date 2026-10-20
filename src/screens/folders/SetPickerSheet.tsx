@@ -13,7 +13,7 @@ import { Square, SquareCheck } from 'lucide-react-native';
 import { TextButton } from '../../components/TextButton';
 import {
   listSetsForPicker,
-  setPinned,
+  setInFolder,
   type PickableSet,
 } from '../../db/repositories/sets';
 import { useQuery } from '../../db/useQuery';
@@ -41,7 +41,7 @@ const renderBackdrop = (props: BottomSheetBackdropProps) => (
 );
 
 /**
- * Pin/unpin sets of the folder's language. Every checkbox change is saved
+ * Add / remove sets of the folder's language to the folder. Every checkbox change is saved
  * immediately; "Done" only closes the sheet.
  */
 export function SetPickerSheet({
@@ -87,12 +87,12 @@ export function SetPickerSheet({
   );
 
   const renderItem = ({ item }: { item: PickableSet }) => {
-    const Icon = item.pinned ? SquareCheck : Square;
+    const Icon = item.inFolder ? SquareCheck : Square;
     return (
       <Pressable
-        onPress={() => setPinned(folderId, item.id, !item.pinned)}
+        onPress={() => setInFolder(folderId, item.id, !item.inFolder)}
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: item.pinned }}
+        accessibilityState={{ checked: item.inFolder }}
         accessibilityLabel={item.name}
         style={({ pressed }) => [
           styles.row,
@@ -101,7 +101,7 @@ export function SetPickerSheet({
         ]}
       >
         <Icon
-          color={item.pinned ? colors.primary : colors.textSecondary}
+          color={item.inFolder ? colors.primary : colors.textSecondary}
           size={24}
         />
         <View style={styles.rowText}>

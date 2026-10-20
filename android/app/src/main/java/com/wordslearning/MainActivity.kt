@@ -5,6 +5,8 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.swmansion.rnscreens.fragment.restoration.RNScreensFragmentFactory
+import com.zoontek.rnbootsplash.RNBootSplash
 
 class MainActivity : ReactActivity() {
 
@@ -14,12 +16,12 @@ class MainActivity : ReactActivity() {
    */
   override fun getMainComponentName(): String = "wordsLearning"
 
-  /**
-   * Required by react-native-screens: avoids crashes when Android restores the activity
-   * after the process was killed in background.
-   */
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(null)
+    // react-native-screens: restores screen fragments safely after process death.
+    supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
+    // Keeps the splash screen (BootTheme) until JS calls BootSplash.hide().
+    RNBootSplash.init(this, R.style.BootTheme)
+    super.onCreate(savedInstanceState)
   }
 
   /**

@@ -45,6 +45,7 @@ function FolderRow({
     <ListRow
       title={folder.name}
       subtitle={plural(folder.setCount, 'set')}
+      pinned={folder.pinnedAt !== null}
       onPress={onPress}
       onLongPress={drag}
       right={
