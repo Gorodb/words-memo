@@ -63,10 +63,7 @@ export function FolderScreen({ navigation, route }: Props) {
 
   // Leave the screen if the folder was removed or the language was switched.
   useEffect(() => {
-    if (
-      folder === null ||
-      (folder && folder.languageCode !== activeLanguage)
-    ) {
+    if (folder === null || (folder && folder.languageCode !== activeLanguage)) {
       navigation.popToTop();
     }
   }, [folder, activeLanguage, navigation]);
@@ -168,6 +165,7 @@ export function FolderScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.grow}
         renderItem={({ item }) => (
           <ListRow
+            variant="card"
             title={item.name}
             subtitle={plural(item.wordCount, 'word')}
             pinned={item.pinnedAt !== null}
@@ -205,6 +203,6 @@ export function FolderScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

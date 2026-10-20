@@ -43,6 +43,7 @@ function FolderRow({
   const drag = useReorderableDrag();
   return (
     <ListRow
+      variant="card"
       title={folder.name}
       subtitle={plural(folder.setCount, 'set')}
       pinned={folder.pinnedAt !== null}
@@ -143,6 +144,6 @@ export function FoldersScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
   grip: { paddingLeft: 12 },
 });

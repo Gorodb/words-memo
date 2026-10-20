@@ -298,7 +298,7 @@ export function SetScreen({ navigation, route }: Props) {
 const BAR_HEIGHT = 56;
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1 },
+  grow: { flexGrow: 1, paddingBottom: 12 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   bar: {
     position: 'absolute',

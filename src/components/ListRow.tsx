@@ -11,6 +11,8 @@ interface Props {
   chevron?: boolean;
   /** Shows a pin before the title (pinned to the top of the list). */
   pinned?: boolean;
+  /** "card": separate rounded card with space around it (folders, sets). */
+  variant?: 'row' | 'card';
   onPress?: () => void;
   onLongPress?: () => void;
 }
@@ -21,6 +23,7 @@ export function ListRow({
   right,
   chevron,
   pinned,
+  variant = 'row',
   onPress,
   onLongPress,
 }: Props) {
@@ -32,7 +35,8 @@ export function ListRow({
       disabled={!onPress && !onLongPress}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: colors.surface, borderBottomColor: colors.border },
+        { backgroundColor: colors.surface, borderColor: colors.border },
+        variant === 'card' ? styles.card : styles.divided,
         pressed && styles.pressed,
       ]}
     >
@@ -55,9 +59,7 @@ export function ListRow({
         ) : null}
       </View>
       {right}
-      {chevron ? (
-        <ChevronRight color={colors.textSecondary} size={20} />
-      ) : null}
+      {chevron ? <ChevronRight color={colors.textSecondary} size={20} /> : null}
     </Pressable>
   );
 }
@@ -68,7 +70,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  divided: { borderBottomWidth: StyleSheet.hairlineWidth },
+  card: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   pressed: { opacity: 0.6 },
   text: { flex: 1 },

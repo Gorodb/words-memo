@@ -95,7 +95,10 @@ export function SetsScreen() {
             confirmDelete(
               set.name,
               set.wordCount > 0
-                ? `${plural(set.wordCount, 'word')} will be deleted, and the set will be removed from all folders.`
+                ? `${plural(
+                    set.wordCount,
+                    'word',
+                  )} will be deleted, and the set will be removed from all folders.`
                 : 'The set will be removed from all folders.',
               () => deleteSet(set.id),
             ),
@@ -111,6 +114,7 @@ export function SetsScreen() {
         contentContainerStyle={styles.grow}
         renderItem={({ item }) => (
           <ListRow
+            variant="card"
             title={item.name}
             subtitle={plural(item.wordCount, 'word')}
             pinned={item.pinnedAt !== null}
@@ -140,5 +144,5 @@ export function SetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
 });

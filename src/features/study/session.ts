@@ -12,8 +12,10 @@ export type CardProgress =
   | {
       kind: 'write';
       status: WriteStatus;
-      /** Letters of the answer given as hints. */
+      /** Letters of the answer the input shows after the last Hint. */
       hints: number;
+      /** Bumped on every Hint so the input remounts with the hint text. */
+      revision: number;
       /** Bumped on "Try again" so the input starts empty. */
       attempt: number;
     };
@@ -37,8 +39,11 @@ export type SessionAction =
   | { type: 'shuffle'; random?: () => number }
   | { type: 'toggleReveal'; id: ID }
   | { type: 'hideLearned' }
+  /** Swipe left in reveal modes: hide this card for the rest of the session. */
+  | { type: 'hide'; id: ID }
   | { type: 'check'; id: ID; input: string }
-  | { type: 'hint'; id: ID }
+  /** `input`: what is typed now; its correct beginning is kept. */
+  | { type: 'hint'; id: ID; input: string }
   | { type: 'show'; id: ID }
   | { type: 'retry'; id: ID }
   | { type: 'markCorrect'; id: ID };
@@ -46,7 +51,7 @@ export type SessionAction =
 function initialProgress(mode: StudyMode): CardProgress {
   return mode.kind === 'reveal'
     ? { kind: 'reveal', revealed: false }
-    : { kind: 'write', status: 'idle', hints: 0, attempt: 0 };
+    : { kind: 'write', status: 'idle', hints: 0, revision: 0, attempt: 0 };
 }
 
 export function createSession(mode: StudyMode, words: Word[]): SessionState {
@@ -73,6 +78,24 @@ export function isCorrect(input: string, answer: string): boolean {
   return normalizeAnswer(input) === normalizeAnswer(answer);
 }
 
+/**
+ * Length of the beginning of `input` that matches `answer` letter by letter
+ * (case-insensitive): "esx" vs "essen" → 2.
+ */
+export function correctPrefixLength(input: string, answer: string): number {
+  const typed = [...input.trimStart().normalize('NFC')];
+  const expected = [...answer.trim().normalize('NFC')];
+  let i = 0;
+  while (
+    i < typed.length &&
+    i < expected.length &&
+    typed[i].toLocaleLowerCase() === expected[i].toLocaleLowerCase()
+  ) {
+    i++;
+  }
+  return i;
+}
+
 /** The first `hints` letters of the answer (what the input shows after Hint). */
 export function hintText(answer: string, hints: number): string {
   return [...answer.trim()].slice(0, hints).join('');
@@ -84,7 +107,9 @@ export function visibleIds(state: SessionState): ID[] {
 }
 
 /** Revealed (reveal modes) or answered correctly (write modes). */
-export function isLearnedInSession(progress: CardProgress | undefined): boolean {
+export function isLearnedInSession(
+  progress: CardProgress | undefined,
+): boolean {
   if (!progress) {
     return false;
   }
@@ -113,7 +138,11 @@ function updateWrite(
   if (current?.kind !== 'write') {
     return state;
   }
-  return { ...state, progress: { ...state.progress, [id]: update(current) } };
+  const next = update(current);
+  // Unchanged (e.g. Hint after Check): keep the same state, no re-render.
+  return next === current
+    ? state
+    : { ...state, progress: { ...state.progress, [id]: next } };
 }
 
 export function sessionReducer(
@@ -150,6 +179,11 @@ export function sessionReducer(
         : state;
     }
 
+    case 'hide':
+      return state.hidden.includes(action.id) || !state.cards[action.id]
+        ? state
+        : { ...state, hidden: [...state.hidden, action.id] };
+
     case 'check': {
       const answer = state.cards[action.id]?.answer ?? '';
       return updateWrite(state, action.id, p =>
@@ -163,10 +197,17 @@ export function sessionReducer(
     }
 
     case 'hint': {
-      const length = [...(state.cards[action.id]?.answer.trim() ?? '')].length;
+      // Keep the correctly typed beginning, drop the rest, add one letter.
+      const answer = state.cards[action.id]?.answer ?? '';
+      const length = [...answer.trim()].length;
+      const correct = correctPrefixLength(action.input, answer);
       return updateWrite(state, action.id, p =>
         p.status === 'idle'
-          ? { ...p, hints: Math.min(p.hints + 1, length) }
+          ? {
+              ...p,
+              hints: Math.min(correct + 1, length),
+              revision: p.revision + 1,
+            }
           : p,
       );
     }

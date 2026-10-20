@@ -8,6 +8,10 @@ interface Props {
   disabled?: boolean;
   /** primary: accent color + bold; secondary: muted color. */
   variant?: 'primary' | 'secondary';
+  /** Hold. When it fires, onPress is skipped for that touch. */
+  onLongPress?: () => void;
+  /** Finger lifted (after a tap or a hold). */
+  onPressOut?: () => void;
 }
 
 export function TextButton({
@@ -15,11 +19,15 @@ export function TextButton({
   onPress,
   disabled,
   variant = 'primary',
+  onLongPress,
+  onPressOut,
 }: Props) {
   const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      onPressOut={onPressOut}
       disabled={disabled}
       hitSlop={8}
       accessibilityRole="button"

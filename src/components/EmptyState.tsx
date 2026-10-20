@@ -5,9 +5,11 @@ import { useAppTheme } from '../theme/ThemeProvider';
 interface Props {
   title: string;
   hint?: string;
+  /** E.g. a TextButton shown below the text. */
+  action?: React.ReactNode;
 }
 
-export function EmptyState({ title, hint }: Props) {
+export function EmptyState({ title, hint, action }: Props) {
   const { colors } = useAppTheme();
   return (
     <View style={styles.container}>
@@ -17,11 +19,13 @@ export function EmptyState({ title, hint }: Props) {
           {hint}
         </Text>
       ) : null}
+      {action ? <View style={styles.action}>{action}</View> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  action: { marginTop: 12 },
   container: {
     flex: 1,
     alignItems: 'center',

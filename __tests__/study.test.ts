@@ -1,6 +1,7 @@
 import type { Word } from '../src/domain/types';
 import { studyMode } from '../src/features/study/modes';
 import {
+  correctPrefixLength,
   createSession,
   hintText,
   isCorrect,
@@ -43,7 +44,11 @@ test('modes pick the right prompt and answer', () => {
 
 test('reveal: tap toggles; hide learned hides revealed words for the session', () => {
   let s = createSession(studyMode('word-translation'), words);
-  s = run(s, { type: 'toggleReveal', id: '1' }, { type: 'toggleReveal', id: '3' });
+  s = run(
+    s,
+    { type: 'toggleReveal', id: '1' },
+    { type: 'toggleReveal', id: '3' },
+  );
   s = run(s, { type: 'toggleReveal', id: '3' }); // hidden again
   s = run(s, { type: 'hideLearned' });
   expect(visibleIds(s)).toEqual(['2', '3']);
@@ -73,17 +78,14 @@ test('write: check is whole-string and case-insensitive', () => {
 
 test('write: wrong → show → try again resets; mark as correct', () => {
   let s = createSession(studyMode('write-word'), words);
-  s = run(
-    s,
-    { type: 'check', id: '2', input: 'x' },
-    { type: 'show', id: '2' },
-  );
+  s = run(s, { type: 'check', id: '2', input: 'x' }, { type: 'show', id: '2' });
   expect(s.progress['2']).toMatchObject({ status: 'shown' });
   s = run(s, { type: 'retry', id: '2' });
   expect(s.progress['2']).toEqual({
     kind: 'write',
     status: 'idle',
     hints: 0,
+    revision: 0,
     attempt: 1,
   });
   s = run(
@@ -96,16 +98,39 @@ test('write: wrong → show → try again resets; mark as correct', () => {
   expect(visibleIds(s)).toEqual(['1', '3']);
 });
 
-test('write: each hint adds one letter from the start, up to the whole answer', () => {
+test('write: hint keeps the correctly typed beginning and adds one letter', () => {
   let s = createSession(studyMode('write-word'), words);
-  s = run(s, { type: 'hint', id: '2' }, { type: 'hint', id: '2' });
-  expect(s.progress['2']).toMatchObject({ hints: 2 });
-  expect(hintText('essen', 2)).toBe('es');
-  for (let i = 0; i < 10; i++) {
-    s = run(s, { type: 'hint', id: '2' });
-  }
-  expect(s.progress['2']).toMatchObject({ hints: 5 });
-  // Hints are ignored once checked.
-  s = run(s, { type: 'check', id: '2', input: 'essen' }, { type: 'hint', id: '2' });
-  expect(s.progress['2']).toMatchObject({ status: 'correct', hints: 5 });
+  const hint = (input: string) => {
+    s = run(s, { type: 'hint', id: '2', input });
+    return hintText(
+      s.cards['2'].answer,
+      (s.progress['2'] as { hints: number }).hints,
+    );
+  };
+  expect(hint('')).toBe('e'); // nothing typed: first letter
+  expect(hint('es')).toBe('ess'); // correct so far: one more letter
+  expect(hint('esx')).toBe('ess'); // wrong part removed
+  expect(hint('ESS')).toBe('esse'); // case doesn't matter
+  expect(hint('xyz')).toBe('e'); // wrong from the start
+  expect(hint('essen')).toBe('essen'); // never longer than the answer
+  expect(correctPrefixLength('  der Ap', 'der Apfel, die Äpfel')).toBe(6);
+  // Every press remounts the input, even if the text stays the same.
+  const before = (s.progress['2'] as { revision: number }).revision;
+  hint('essen');
+  expect((s.progress['2'] as { revision: number }).revision).toBe(before + 1);
+  // Ignored once checked.
+  s = run(s, { type: 'check', id: '2', input: 'essen' });
+  const done = s;
+  s = run(s, { type: 'hint', id: '2', input: '' });
+  expect(s).toBe(done);
+});
+
+test('swipe-hide removes one card for the session; repeats are no-ops', () => {
+  let s = createSession(studyMode('translation-word'), words);
+  s = run(s, { type: 'hide', id: '2' }, { type: 'hide', id: '2' });
+  expect(visibleIds(s)).toEqual(['1', '3']);
+  expect(s.hidden).toEqual(['2']);
+  s = run(s, { type: 'shuffle', random: () => 0 });
+  expect(visibleIds(s)).not.toContain('2');
+  expect(run(s, { type: 'hide', id: 'missing' })).toBe(s);
 });

@@ -3,7 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { Square, SquareCheck } from 'lucide-react-native';
+import {
+  ChevronDown,
+  ChevronUp,
+  Square,
+  SquareCheck,
+} from 'lucide-react-native';
 import { TextButton } from '../../components/TextButton';
 import type { Word } from '../../domain/types';
 import { useAppTheme } from '../../theme/ThemeProvider';
@@ -24,7 +29,7 @@ interface Props {
 const ACTION_WIDTH = 80;
 
 /**
- * Swipe left → Edit / Delete. Tap → expand examples. "Learned" / "To revise"
+ * Swipe left → Edit / Delete. Tap (or "Show examples") → expand examples. "Learned" / "To revise"
  * at the end of the row.
  */
 export function WordRow({
@@ -72,6 +77,7 @@ export function WordRow({
   return (
     <ReanimatedSwipeable
       ref={swipeRef}
+      containerStyle={[styles.card, { borderColor: colors.border }]}
       enabled={!selection}
       friction={2}
       rightThreshold={ACTION_WIDTH / 2}
@@ -88,7 +94,7 @@ export function WordRow({
         accessibilityLabel={word.term}
         style={[
           styles.row,
-          { backgroundColor: colors.surface, borderBottomColor: colors.border },
+          { backgroundColor: colors.surface },
         ]}
       >
         {selection ? (
@@ -123,6 +129,29 @@ export function WordRow({
               ))}
             </View>
           ) : null}
+          {word.examples.length > 0 && !selection ? (
+            <Pressable
+              onPress={onToggleExpanded}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityState={{ expanded }}
+              accessibilityLabel={
+                expanded ? 'Hide examples' : `Show ${word.examples.length} examples`
+              }
+              style={({ pressed }) => [styles.more, pressed && styles.pressed]}
+            >
+              <Text style={[styles.moreText, { color: colors.primary }]}>
+                {expanded
+                  ? 'Hide examples'
+                  : `Show examples (${word.examples.length})`}
+              </Text>
+              {expanded ? (
+                <ChevronUp color={colors.primary} size={16} />
+              ) : (
+                <ChevronDown color={colors.primary} size={16} />
+              )}
+            </Pressable>
+          ) : null}
         </View>
         {selection ? null : (
           <TextButton
@@ -137,6 +166,14 @@ export function WordRow({
 }
 
 const styles = StyleSheet.create({
+  // Each word is a separate rounded card; the swipe actions stay inside it.
+  card: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -144,7 +181,6 @@ const styles = StyleSheet.create({
     paddingLeft: 16,
     paddingRight: 4,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   text: { flex: 1, paddingTop: 2 },
   term: { fontSize: 16, fontWeight: '500' },
@@ -153,6 +189,15 @@ const styles = StyleSheet.create({
   example: { gap: 2 },
   exampleText: { fontSize: 14 },
   exampleTranslation: { fontSize: 13, fontStyle: 'italic' },
+  more: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 2,
+    marginTop: 6,
+  },
+  moreText: { fontSize: 13, fontWeight: '600' },
+  pressed: { opacity: 0.5 },
   actions: { flexDirection: 'row' },
   action: {
     width: ACTION_WIDTH,
