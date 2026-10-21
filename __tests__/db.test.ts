@@ -37,6 +37,15 @@ import {
   updateWord,
 } from '../src/db/repositories/words';
 import { MAX_PINNED, PinLimitError } from '../src/domain/pinning';
+import {
+  applyImportPlan,
+  exportAll,
+  exportSets,
+  loadExisting,
+} from '../src/db/repositories/backup';
+import { parseBackup } from '../src/features/backup/format';
+import { planImport } from '../src/features/backup/merge';
+import { createId } from '../src/utils/id';
 import { openNodeSqlite } from '../test-utils/sqliteAdapter';
 
 let db: DB;
@@ -75,8 +84,14 @@ describe('folders', () => {
   test('removing a folder unpins its sets but keeps them and their words', async () => {
     const folder = await createFolder('de', 'Küche');
     const set = await createSet('de', 'Geschirr', folder.id);
-    await createWord(set.id, { term: 'der Topf', translation: 'кастрюля', examples: [] });
-    expect((await listFolders('de')).find(f => f.id === folder.id)?.setCount).toBe(1);
+    await createWord(set.id, {
+      term: 'der Topf',
+      translation: 'кастрюля',
+      examples: [],
+    });
+    expect(
+      (await listFolders('de')).find(f => f.id === folder.id)?.setCount,
+    ).toBe(1);
 
     await deleteFolder(folder.id);
     expect(await getFolder(folder.id)).toBeNull();
@@ -126,7 +141,11 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
     translation: 'есть',
     examples: [{ text: 'Wir essen.', translation: 'Мы едим.' }],
   });
-  await createWord(set.id, { term: 'das   Essen', translation: 'еда', examples: [] });
+  await createWord(set.id, {
+    term: 'das   Essen',
+    translation: 'еда',
+    examples: [],
+  });
   expect(word).toMatchObject({ term: 'essen', languageCode: 'de' });
 
   await updateWord(word.id, {
@@ -151,7 +170,10 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
   ]);
 
   const norms = db
-    .executeSync('SELECT term_norm FROM words WHERE set_id = ? ORDER BY term_norm', [set.id])
+    .executeSync(
+      'SELECT term_norm FROM words WHERE set_id = ? ORDER BY term_norm',
+      [set.id],
+    )
     .rows.map(r => r.term_norm);
   expect(norms).toEqual(['das Essen', 'essen']);
 
@@ -215,7 +237,9 @@ test('migration v1 → v2 keeps sets and words and turns ownership into pins', (
     { id: 's1', name: 'One' },
     { id: 's2', name: 'Two' },
   ]);
-  expect(rows('SELECT folder_id, set_id FROM folder_sets ORDER BY set_id')).toEqual([
+  expect(
+    rows('SELECT folder_id, set_id FROM folder_sets ORDER BY set_id'),
+  ).toEqual([
     { folder_id: 'fA', set_id: 's1' },
     { folder_id: 'fB', set_id: 's2' },
   ]);
@@ -314,9 +338,9 @@ describe('pin to top', () => {
     expect((await listSetsInFolder(folder.id)).map(x => x.name)).toEqual(
       expected,
     );
-    expect(
-      (await listSetsForPicker(folder.id, lang)).map(x => x.name),
-    ).toEqual(expected);
+    expect((await listSetsForPicker(folder.id, lang)).map(x => x.name)).toEqual(
+      expected,
+    );
 
     await setSetPinned(b.id, false);
     const sets = await listSets(lang);
@@ -333,5 +357,70 @@ describe('pin to top', () => {
     await expect(setSetPinned(a.id, true)).rejects.toThrow(
       `You can pin up to ${MAX_PINNED} sets`,
     );
+  });
+});
+
+describe('backup round trip', () => {
+  test('a shared set can be deleted and imported back unchanged', async () => {
+    const lang = 'de';
+    const folder = await createFolder(lang, 'RT folder');
+    const set = await createSet(lang, 'RT set', folder.id);
+    const learned = await createWord(set.id, {
+      term: 'der Hund, die Hunde',
+      translation: 'собака',
+      examples: [{ text: 'Der Hund bellt.', translation: 'Собака лает.' }],
+    });
+    await setLearned(learned.id, true);
+    await createWord(set.id, {
+      term: 'die Katze',
+      translation: 'кошка',
+      examples: [],
+    });
+    const before = await listWords(set.id);
+
+    const shared = await exportSets([set.id]);
+    expect(shared.kind).toBe('sets');
+    expect(shared.languages).toHaveLength(1);
+    expect(shared.languages[0].folders).toEqual([]);
+    // Survives JSON like a real file.
+    const file = parseBackup(JSON.stringify(shared));
+
+    await deleteSet(set.id);
+    const plan = planImport(file, loadExisting, ['de', 'en'], createId);
+    expect(plan.summary).toMatchObject({ wordsAdded: 2, setsCreated: 1 });
+    await applyImportPlan(plan);
+
+    const restored = (await listSets(lang)).find(s => s.name === 'RT set')!;
+    const after = await listWords(restored.id);
+    const strip = (w: (typeof after)[number]) => [
+      w.term,
+      w.translation,
+      w.examples,
+      w.learnedAt !== null,
+    ];
+    expect(after.map(strip)).toEqual(before.map(strip));
+
+    // Importing the same file again only updates; no duplicates.
+    const again = planImport(file, loadExisting, ['de', 'en'], createId);
+    expect(again.summary).toMatchObject({
+      wordsAdded: 0,
+      wordsUpdated: 2,
+      setsCreated: 0,
+    });
+    await applyImportPlan(again);
+    expect(await listWords(restored.id)).toHaveLength(2);
+  });
+
+  test('full export keeps folders in order with their set names', async () => {
+    const lang = 'en';
+    const f = await createFolder(lang, 'Full folder');
+    await createSet(lang, 'Full set', f.id);
+    const full = await exportAll();
+    expect(full.kind).toBe('full');
+    const en = full.languages.find(l => l.code === lang)!;
+    expect(en.folders.find(x => x.name === 'Full folder')?.setNames).toEqual([
+      'Full set',
+    ]);
+    expect(en.sets.some(s => s.name === 'Full set')).toBe(true);
   });
 });

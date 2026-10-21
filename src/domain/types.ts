@@ -3,16 +3,16 @@
  */
 
 export type ID = string;
-/** ISO-639-1 code of the language being learned, e.g. "en", "de". */
+/** ISO-639-1 code of the language being learned, e.g. 'en', 'de'. */
 export type LanguageCode = string;
 /** Milliseconds since epoch. */
 export type Timestamp = number;
 
 export interface Language {
   code: LanguageCode;
-  /** English name, e.g. "German". */
+  /** English name, e.g. 'German'. */
   name: string;
-  /** Native name, e.g. "Deutsch". */
+  /** Native name, e.g. 'Deutsch'. */
   nativeName: string;
 }
 
@@ -71,31 +71,31 @@ export type WordInput = Pick<Word, 'term' | 'translation' | 'examples'>;
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
+export type BackupWord = Pick<
+  Word,
+  'term' | 'translation' | 'examples' | 'learnedAt' | 'createdAt' | 'updatedAt'
+>;
+
+export type BackupSet = Pick<WordSet, 'name' | 'createdAt' | 'updatedAt'> & {
+  words: BackupWord[];
+};
+
+export type BackupFolder = Pick<Folder, 'name' | 'createdAt' | 'updatedAt'> & {
+  /** Names of the sets in this folder. */
+  setNames: string[];
+};
+
 /** Shape of an exported backup file. Versioned so the format can evolve. */
 export interface BackupFile {
   app: 'wordsLearning';
   version: 1;
+  /** 'full': Settings → Export. 'sets': shared sets (no folders). */
+  kind: 'full' | 'sets';
   exportedAt: Timestamp;
   languages: Array<{
     code: LanguageCode;
-    /** Folders in manual order; each lists the names of its sets. */
-    folders: Array<
-      Pick<Folder, 'name' | 'createdAt' | 'updatedAt'> & { setNames: string[] }
-    >;
-    sets: Array<
-      Pick<WordSet, 'name' | 'createdAt' | 'updatedAt'> & {
-        words: Array<
-          Pick<
-            Word,
-            | 'term'
-            | 'translation'
-            | 'examples'
-            | 'learnedAt'
-            | 'createdAt'
-            | 'updatedAt'
-          >
-        >;
-      }
-    >;
+    /** Folders in manual order. */
+    folders: BackupFolder[];
+    sets: BackupSet[];
   }>;
 }

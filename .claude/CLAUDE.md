@@ -45,6 +45,12 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 - **Words order**: `listWords` returns "to learn" first, then learned, each by `sort_at DESC`. `createWord` and `setLearned` set `sort_at` above every word in the set, which moves the word to the top of its part.
 - **Study** (`src/features/study/`): `modes.ts` is the registry (kind `reveal` | `write`, prompt side, answer side). `session.ts` is a pure reducer and only lives in memory. `StudyScreen` renders a card per kind, so a new kind needs a renderer.
 
+## Backup
+
+- **Pure parts**: `features/backup/format.ts` turns untrusted JSON into `BackupFile` with readable errors, and `merge.ts` (`planImport`) builds an `ImportPlan` from a backup and a snapshot of the DB (`loadExisting`). Keep merge rules there and unit test them (`__tests__/backup.test.ts`).
+- **Writes**: `applyImportPlan` writes the plan in one transaction. `exportAll` / `exportSets` build files from the DB. `db.test.ts` has a round trip (share a set, delete it, import it, import again).
+- **Native**: `backupFiles.ts` writes to the cache dir, then calls `saveDocuments` (save as), `react-native-share` (share sheet) or `pick` + `keepLocalCopy` + `readFile` (import). Picker cancellation (`OPERATION_CANCELED`) and share cancel are normal outcomes, not errors.
+
 ## App icon and splash
 
 - **Icon**: `scripts/brand/artwork.ts` holds the artwork as SVG. `npm run brand` renders it with sharp into:

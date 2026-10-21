@@ -49,8 +49,7 @@ src/
   db/                         op-sqlite connection, migrations, repositories
   features/dictionary/        search keys, lookup queries, download/install store
   features/study/             study modes registry and session reducer (pure + unit tests)
-  -- later --
-  features/backup/            export, import, merge logic (pure + unit tests)
+  features/backup/            backup format, import planner (pure + unit tests), save/share/pick
 scripts/dictionary/           Wiktionary → SQLite dictionary build (dict:fetch, dict:build)
 ```
 
@@ -65,7 +64,7 @@ scripts/dictionary/           Wiktionary → SQLite dictionary build (dict:fetch
 | Settings persistence | zustand `persist` → SQLite `settings` table (or MMKV) | |
 | Icons | lucide-react-native (+ react-native-svg) | autolinked, no font setup |
 | Downloads, files | @dr.pogodin/react-native-fs | dictionary downloads with progress; backup will reuse it |
-| File picking for backup | @react-native-documents/picker (later) | pick an import file, save or share the export |
+| Backup files | @react-native-documents/picker + react-native-share | pick, "save as" and share sheet |
 
 ## Database (SQLite)
 
@@ -84,16 +83,26 @@ settings (key PK, value)
 
 Words are **not unique**: the same term can be in several sets of one language.
 
-## Backup
+## Backup ✅
 
-- **Export**: one JSON file (`BackupFile` in `domain/types.ts`, versioned). For each language it holds the sets with their words, plus the folders in their manual order, each listing the names of its sets.
-- **Import** (merge, never wipes data). For each language in the file:
-  1. Find each set by name, or create it. Do the same for folders, and add the listed sets to them.
-  2. For each word, look it up by exact `(language_code, term_norm)`:
-     - **found**: fully replace translation and examples on **every** matching word. Each one stays in its current set.
-     - **not found**: insert it into the set from the backup.
-  3. Run everything in one transaction and show a summary (X added, Y updated).
-- The merge is a pure function `(existing, backup) → operations`, so it can be unit tested without a device.
+- **File**: JSON `BackupFile` (`domain/types.ts`, `version: 1`).
+  - `kind: 'full'` (Settings → Export) holds every language: sets with words (term, translation, example pairs, learned, dates), and folders in manual order with the names of their sets.
+  - `kind: 'sets'` is a shared set: sets only, no folders.
+- **Export** (Settings → Export) offers two choices:
+  - **Save to device**: the system "save as" dialog.
+  - **Share**: the share sheet (Drive, Telegram, e-mail, …).
+- **Share set** (the set's ⋯ menu) sends a `kind: 'sets'` file. The other person imports it with Settings → Import.
+- **Import** (merge, never deletes). Before writing anything, the app shows a preview ("X added, Y updated, …") and asks for confirmation:
+  1. Sets and folders are matched by name per language, or created. Sets listed for a folder are added to it.
+  2. A word matching by exact `(language_code, term_norm)` fully replaces translation and examples on **every** matching word. Each one keeps its set and its learned state.
+  3. Other words are added to their set from the file, with their learned state.
+  4. Languages the app doesn't have are skipped and reported.
+  5. Everything runs in one transaction.
+- **Code**:
+  - `features/backup/format.ts`: validation of untrusted files.
+  - `merge.ts`: the pure planner.
+  - `backupFiles.ts`: save, share and pick.
+  - `db/repositories/backup.ts`: export, snapshot and apply.
 
 ## Dictionaries
 
@@ -133,7 +142,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 1. ✅ **Scaffold**: dependencies, providers, bottom tabs, Folders stack, theme switching, language switching, placeholder screens.
 2. ✅ **DB layer + Folders/Sets CRUD**: op-sqlite, migrations, repositories, create and rename bottom sheet, long-press Rename / Delete, Sets tab grouped by folder, persisted settings.
 3. ✅ **Words**: shared bottom-sheet form (fields, required, suggestions, example pairs), Set screen with "To learn" / "Learned" parts, swipe to Edit / Delete, tap to expand examples, and selection mode. Remaining: search.
-4. **Backup**: export and share, import with merge and summary, unit tests for the merge.
+4. ✅ **Backup**: export (save / share), import with preview and merge, share a set, unit and round-trip tests.
 5. ✅ **Dictionaries**: Wiktionary build script, download flow, and forms and translation suggestions. Remaining: upload `de-ru.db` / `en-ru.db` to the `dict-v1` release.
 6. ✅ **Study modes**: registry plus the first 4 modes. Later: more modes, and spaced repetition.
 7. Polish: app icon, iOS build check on the Mac.

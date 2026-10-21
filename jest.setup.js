@@ -36,6 +36,9 @@ jest.mock('react-native-reorderable-list', () => {
 // Native file system: dictionaries are "not installed" in tests.
 jest.mock('@dr.pogodin/react-native-fs', () => ({
   DocumentDirectoryPath: '/documents',
+  CachesDirectoryPath: '/caches',
+  readFile: jest.fn(() => Promise.resolve('')),
+  writeFile: jest.fn(() => Promise.resolve()),
   exists: jest.fn(() => Promise.resolve(false)),
   mkdir: jest.fn(() => Promise.resolve()),
   moveFile: jest.fn(() => Promise.resolve()),
@@ -64,4 +67,18 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
 jest.mock('react-native-bootsplash', () => ({
   __esModule: true,
   default: { hide: jest.fn(() => Promise.resolve()), isVisible: jest.fn() },
+}));
+
+jest.mock('@react-native-documents/picker', () => ({
+  pick: jest.fn(),
+  keepLocalCopy: jest.fn(),
+  saveDocuments: jest.fn(),
+  isErrorWithCode: () => false,
+  errorCodes: { OPERATION_CANCELED: 'OPERATION_CANCELED' },
+  types: { allFiles: '*/*', json: 'application/json' },
+}));
+
+jest.mock('react-native-share', () => ({
+  __esModule: true,
+  default: { open: jest.fn(() => Promise.resolve({ success: true })) },
 }));

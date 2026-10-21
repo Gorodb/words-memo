@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { SectionList, StyleSheet, View } from 'react-native';
+import { Alert, SectionList, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +30,7 @@ import {
 } from '../../db/repositories/words';
 import { useQuery } from '../../db/useQuery';
 import type { ID, Word } from '../../domain/types';
+import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
@@ -76,8 +77,16 @@ export function SetScreen({ navigation, route }: Props) {
     const toLearn = (words ?? []).filter(w => w.learnedAt === null);
     const learned = (words ?? []).filter(w => w.learnedAt !== null);
     return [
-      { key: 'toLearn' as const, title: `To learn (${toLearn.length})`, data: toLearn },
-      { key: 'learned' as const, title: `Learned (${learned.length})`, data: learned },
+      {
+        key: 'toLearn' as const,
+        title: `To learn (${toLearn.length})`,
+        data: toLearn,
+      },
+      {
+        key: 'learned' as const,
+        title: `Learned (${learned.length})`,
+        data: learned,
+      },
     ].filter(s => s.data.length > 0);
   }, [words]);
 
@@ -95,7 +104,9 @@ export function SetScreen({ navigation, route }: Props) {
         wordForm({
           title: word ? 'Edit word' : 'New word',
           languageCode: set.languageCode,
-          dictionaryHint: `Download the ${languageName ?? ''} dictionary on the Languages tab to get suggestions.`,
+          dictionaryHint: `Download the ${
+            languageName ?? ''
+          } dictionary on the Languages tab to get suggestions.`,
           initial: word,
           onSubmit: async input => {
             if (word) {
@@ -151,6 +162,17 @@ export function SetScreen({ navigation, route }: Props) {
             ),
         },
         {
+          label: 'Share set',
+          disabled: all.length === 0,
+          onPress: () =>
+            shareSet(set.id, set.name).catch(e =>
+              Alert.alert(
+                'Could not share the set',
+                e instanceof Error ? e.message : String(e),
+              ),
+            ),
+        },
+        {
           label: 'Select words',
           disabled: all.length === 0,
           onPress: () => {
@@ -203,7 +225,15 @@ export function SetScreen({ navigation, route }: Props) {
           </View>
         ),
     });
-  }, [navigation, set, selected, allSelected, words, openWordForm, openSetMenu]);
+  }, [
+    navigation,
+    set,
+    selected,
+    allSelected,
+    words,
+    openWordForm,
+    openSetMenu,
+  ]);
 
   const toggle = (ids: ReadonlySet<ID>, id: ID) => {
     const next = new Set(ids);
@@ -254,7 +284,9 @@ export function SetScreen({ navigation, route }: Props) {
                 ? {
                     selected: selected.has(item.id),
                     onToggle: () =>
-                      setSelected(prev => (prev ? toggle(prev, item.id) : prev)),
+                      setSelected(prev =>
+                        prev ? toggle(prev, item.id) : prev,
+                      ),
                   }
                 : undefined
             }
