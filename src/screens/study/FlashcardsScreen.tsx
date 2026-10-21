@@ -22,6 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeftRight, Shuffle, Undo2, X } from 'lucide-react-native';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
@@ -86,6 +87,7 @@ function Game({
   navigation: Props['navigation'];
 }) {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [state, dispatchState] = useReducer(
     flashcardsReducer,
     words,
@@ -143,7 +145,9 @@ function Game({
 
   return (
     // Its own root: on iOS the screen is a native modal, outside the app's root.
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView
+      style={[styles.root, { paddingBottom: 24 + insets.bottom }]}
+    >
       <View style={styles.cardArea}>
         {card ? (
           <SwipeCard
@@ -400,7 +404,7 @@ function ControlButton({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingBottom: 24 },
+  root: { flex: 1 },
   cardArea: { flex: 1, padding: 24, justifyContent: 'center' },
   card: { height: '80%', maxHeight: 420 },
   face: {

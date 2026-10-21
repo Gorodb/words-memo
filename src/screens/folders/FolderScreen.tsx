@@ -203,6 +203,6 @@ export function FolderScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 32 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

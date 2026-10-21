@@ -144,6 +144,6 @@ export function FoldersScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 32 },
   grip: { paddingLeft: 12 },
 });

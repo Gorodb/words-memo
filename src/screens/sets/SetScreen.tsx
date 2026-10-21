@@ -333,7 +333,11 @@ export function SetScreen({ navigation, route }: Props) {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={[
           styles.grow,
-          selected && { paddingBottom: BAR_HEIGHT + insets.bottom },
+          // Edge-to-edge: keep the last word above the system navigation bar.
+          {
+            paddingBottom:
+              LIST_END_SPACE + insets.bottom + (selected ? BAR_HEIGHT : 0),
+          },
         ]}
         ListHeaderComponent={
           words && words.length > 0 && !selected ? (
@@ -416,9 +420,11 @@ export function SetScreen({ navigation, route }: Props) {
 }
 
 const BAR_HEIGHT = 56;
+/** Space below the last word. */
+const LIST_END_SPACE = 32;
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1, paddingBottom: 12 },
+  grow: { flexGrow: 1 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   tiles: { flexDirection: 'row', gap: 12, padding: 12, paddingBottom: 4 },
   bar: {

@@ -144,5 +144,5 @@ export function SetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 12 },
+  grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 32 },
 });

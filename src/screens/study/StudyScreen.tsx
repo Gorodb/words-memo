@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { EmptyState } from '../../components/EmptyState';
 import { TextButton } from '../../components/TextButton';
@@ -85,6 +86,7 @@ function Session({
 }) {
   const { colors } = useAppTheme();
   const keyboardHeight = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
   const [state, dispatch] = useReducer(sessionReducer, initial);
   const listRef = useRef<FlatList<string>>(null);
 
@@ -138,7 +140,8 @@ function Session({
         onScrollToIndexFailed={() => {}}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: 24 + keyboardHeight },
+          // The keyboard covers the navigation bar, so pad by one or the other.
+          { paddingBottom: 32 + (keyboardHeight || insets.bottom) },
         ]}
         ListEmptyComponent={
           <EmptyState
