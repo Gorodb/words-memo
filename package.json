@@ -7,7 +7,7 @@
     "android:buildDebug": "yarn react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res; cd android; ./gradlew assembleDebug",
     "android:bundle": "react-native bundle --platform android --dev false --entry-file index.android.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
     "android:build": "cd android && ./gradlew assembleRelease && cd ..",
-    "android:install": "adb -d install android/app/build/outputs/apk/release/app-release.apk",
+    "android:install": "adb -d install android/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
     "build:ios": "react-native bundle --entry-file='App.tsx' --bundle-output='./ios/main.jsbundle' --dev=false --platform='ios'",
     "refreshNodeModules": "rm -rf node_modules && yarn",
     "refreshPods": "cd ios && rm -rf Pods && pod install && cd ..",

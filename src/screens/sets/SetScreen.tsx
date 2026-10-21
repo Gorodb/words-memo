@@ -10,7 +10,13 @@ import { Alert, SectionList, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleEllipsis, Plus } from 'lucide-react-native';
+import {
+  CircleEllipsis,
+  GalleryHorizontalEnd,
+  GraduationCap,
+  Plus,
+} from 'lucide-react-native';
+import { ActionTile } from '../../components/ActionTile';
 import { useActionMenu } from '../../components/ActionMenuSheet';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
@@ -18,13 +24,14 @@ import { LabeledDivider } from '../../components/LabeledDivider';
 import { TextButton } from '../../components/TextButton';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { nameForm, wordForm } from '../../components/formSheet/forms';
-import { BUNDLED_LANGUAGES } from '../../config/languages';
+import { BUNDLED_LANGUAGES, DICTIONARIES } from '../../config/languages';
 import { getSet, renameSet, setSetPinned } from '../../db/repositories/sets';
 import { pinLabel, togglePinned } from '../../components/itemActions';
 import {
   createWord,
   deleteWord,
   listWords,
+  resetLearned,
   setLearned,
   updateWord,
 } from '../../db/repositories/words';
@@ -34,6 +41,7 @@ import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
+import { plural } from '../../utils/plural';
 import { WordRow } from './WordRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Set'>;
@@ -45,8 +53,8 @@ interface Section {
 }
 
 /**
- * Words of one set: "To learn" then "Learned". Header: + (add word) and
- * ⋯ (Edit set / Select words / Study set / Study not learned).
+ * Words of one set: Learn / Flashcards tiles, then "To learn" and "Learned".
+ * Header: + (add word) and ⋯ (Edit set / Select words / Study … / Reset).
  */
 export function SetScreen({ navigation, route }: Props) {
   const { setId } = route.params;
@@ -104,9 +112,11 @@ export function SetScreen({ navigation, route }: Props) {
         wordForm({
           title: word ? 'Edit word' : 'New word',
           languageCode: set.languageCode,
-          dictionaryHint: `Download the ${
-            languageName ?? ''
-          } dictionary on the Languages tab to get suggestions.`,
+          dictionaryHint: DICTIONARIES[set.languageCode]
+            ? `Download the ${
+                languageName ?? ''
+              } dictionary on the Languages tab to get suggestions.`
+            : undefined,
           initial: word,
           onSubmit: async input => {
             if (word) {
@@ -135,6 +145,56 @@ export function SetScreen({ navigation, route }: Props) {
       }),
     [openMenu, navigation],
   );
+
+  /** Study modes over the words to learn, or the whole set once all are learned. */
+  const openLearn = useCallback(() => {
+    const all = words ?? [];
+    const notLearned = all.filter(w => w.learnedAt === null);
+    startStudy((notLearned.length > 0 ? notLearned : all).map(w => w.id));
+  }, [words, startStudy]);
+
+  const confirmResetLearned = useCallback(() => {
+    if (!set) {
+      return;
+    }
+    const learned = (words ?? []).filter(w => w.learnedAt !== null).length;
+    Alert.alert(
+      'Reset progress?',
+      `${plural(learned, 'learned word')} will be marked as not learned.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => resetLearned(set.id),
+        },
+      ],
+    );
+  }, [set, words]);
+
+  const openFlashcards = useCallback(() => {
+    if (!set) {
+      return;
+    }
+    if ((words ?? []).some(w => w.learnedAt === null)) {
+      navigation.navigate('Flashcards', { setId: set.id });
+      return;
+    }
+    Alert.alert(
+      'All words are learned',
+      'Flashcards show the words to learn. Reset progress to go through the whole set again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset and start',
+          onPress: async () => {
+            await resetLearned(set.id);
+            navigation.navigate('Flashcards', { setId: set.id });
+          },
+        },
+      ],
+    );
+  }, [set, words, navigation]);
 
   const openSetMenu = useCallback(() => {
     if (!set) {
@@ -190,9 +250,15 @@ export function SetScreen({ navigation, route }: Props) {
           disabled: notLearned.length === 0,
           onPress: () => startStudy(notLearned.map(w => w.id)),
         },
+        {
+          label: 'Reset progress',
+          destructive: true,
+          disabled: all.length === notLearned.length,
+          onPress: confirmResetLearned,
+        },
       ],
     });
-  }, [set, words, openMenu, openForm, startStudy]);
+  }, [set, words, openMenu, openForm, startStudy, confirmResetLearned]);
 
   const allSelected =
     !!selected && !!words && words.length > 0 && selected.size === words.length;
@@ -252,6 +318,8 @@ export function SetScreen({ navigation, route }: Props) {
     openSwipe.current = methods;
   };
 
+  const toLearnCount = (words ?? []).filter(w => w.learnedAt === null).length;
+
   // Study selected words in list order.
   const selectedIds = (words ?? [])
     .filter(w => selected?.has(w.id))
@@ -267,6 +335,26 @@ export function SetScreen({ navigation, route }: Props) {
           styles.grow,
           selected && { paddingBottom: BAR_HEIGHT + insets.bottom },
         ]}
+        ListHeaderComponent={
+          words && words.length > 0 && !selected ? (
+            <View style={styles.tiles}>
+              <ActionTile
+                icon={GraduationCap}
+                title="Learn"
+                subtitle={`${STUDY_MODES.length} study modes`}
+                onPress={openLearn}
+              />
+              <ActionTile
+                icon={GalleryHorizontalEnd}
+                title="Flashcards"
+                subtitle={
+                  toLearnCount > 0 ? `${toLearnCount} to learn` : 'All learned'
+                }
+                onPress={openFlashcards}
+              />
+            </View>
+          ) : undefined
+        }
         renderSectionHeader={({ section }) => (
           <LabeledDivider label={section.title} />
         )}
@@ -332,6 +420,7 @@ const BAR_HEIGHT = 56;
 const styles = StyleSheet.create({
   grow: { flexGrow: 1, paddingBottom: 12 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tiles: { flexDirection: 'row', gap: 12, padding: 12, paddingBottom: 4 },
   bar: {
     position: 'absolute',
     left: 0,

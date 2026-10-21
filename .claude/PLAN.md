@@ -1,11 +1,11 @@
 # wordsLearning: plan
 
-Offline React Native app (no backend, no login) for learning English and German words with Russian translations.
+Offline React Native app (no backend, no login) for learning English, German and Chinese words with Russian translations.
 
 ## Concepts
 
 ```
-Language (en, de, +downloadable)
+Language (en, de, zh)
  ├─ WordSet           (belongs to the language; exists on its own)
  │   └─ Word
  └─ Folder            (manual drag-and-drop order; contains any number of sets)
@@ -28,8 +28,9 @@ RootStack
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
 │  ├─ LanguagesTab     en / de ✓ active, dictionary Download / Remove per language
 │  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
-├─ Set                 "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned
-└─ Study               one session in one study mode (opens on top of the tabs)
+├─ Set                 Learn / Flashcards tiles, "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
+├─ Study               one session in one study mode (opens on top of the tabs)
+└─ Flashcards          full-screen modal: [×] counter [shuffle]; swipe cards of the words to learn
 ```
 
 `Set` and the learning screens sit in the root stack, so both Folders and Sets can open them and they cover the tab bar.
@@ -137,6 +138,18 @@ Registry in `src/features/study/modes.ts`; session logic in `session.ts` (pure r
 
 Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or correct words for the rest of the session and doesn't change the Learned flag in the set.
 
+## Set tiles and flashcards
+
+- **Learn** tile: a menu of the study modes over the words to learn (all words once every word is learned).
+- **Flashcards** tile (`FlashcardsScreen`, reducer in `features/study/flashcards.ts`):
+  - Cards are the set's words that are **not learned**, snapshot at open. If all are learned, the tile offers "Reset and start".
+  - Header: close, counter `3 / 12`, shuffle (shuffles the cards not answered yet).
+  - The card shows the translation; tap flips it to the word. "Word first" / "Translation first" swaps the sides.
+  - Swipe right = learned, swipe left = to learn. **Both write the Learned flag to the database** (only when it changes).
+  - Undo goes back one card and restores its Learned flag.
+  - At the end: "Repeat N to learn" starts a round over the cards still to learn.
+- **Reset progress** (set ⋯ menu): marks every word of the set as not learned, after a confirmation.
+
 ## Steps
 
 1. ✅ **Scaffold**: dependencies, providers, bottom tabs, Folders stack, theme switching, language switching, placeholder screens.
@@ -146,6 +159,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 5. ✅ **Dictionaries**: Wiktionary build script, download flow, and forms and translation suggestions. Remaining: upload `de-ru.db` / `en-ru.db` to the `dict-v1` release.
 6. ✅ **Study modes**: registry plus the first 4 modes. Later: more modes, and spaced repetition.
 7. Polish: app icon, iOS build check on the Mac.
+8. ✅ **Set tiles + flashcards**: Learn / Flashcards tiles on the Set screen, flashcards game, Reset progress.
 
 ## Decisions
 
@@ -156,6 +170,8 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 - Dictionaries come from Wiktionary, are kept out of git, and are downloaded by the app (GitHub Release).
 - Writing modes check the whole string (case-insensitive), and "Mark as correct" covers typos or a missing article.
 - "Hide learned" in study is session-only.
+- Chinese (`zh`) is a language without a dictionary for now: no download button and no suggestions. Its words are typed freely (characters, pinyin in the term or translation as you like).
+- Flashcards are the exception: their swipes change the Learned flag in the database. They show only the words to learn.
 - Sets are independent of folders. A folder contains sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are added to it.
 - Folders are sorted manually with drag and drop. New folders go to the end.
 - Up to 5 folders and 5 sets per language can be pinned to the top of their lists. Use the "⋯" menu on a folder or set screen, or long-press a set.

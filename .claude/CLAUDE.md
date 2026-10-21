@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Offline React Native app (Android + iOS, no backend, no auth) for learning English and German words with Russian translations. **`.claude/PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Feature plans live in `.claude/plans/`. Read it before starting a feature and update it when a step is completed or a decision changes.
+Offline React Native app (Android + iOS, no backend, no auth) for learning English, German and Chinese words with Russian translations. **`.claude/PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Feature plans live in `.claude/plans/`. Read it before starting a feature and update it when a step is completed or a decision changes.
 
 ## Commands
 
@@ -44,6 +44,7 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 - **Keyboard outside sheets**: there's no keyboard library on purpose. A `KeyboardProvider` would change keyboard handling app-wide and break the sheets. Screens pad their scroll content by `useKeyboardHeight()` and scroll the focused input into view (see `StudyScreen`).
 - **Words order**: `listWords` returns "to learn" first, then learned, each by `sort_at DESC`. `createWord` and `setLearned` set `sort_at` above every word in the set, which moves the word to the top of its part.
 - **Study** (`src/features/study/`): `modes.ts` is the registry (kind `reveal` | `write`, prompt side, answer side). `session.ts` is a pure reducer and only lives in memory. `StudyScreen` renders a card per kind, so a new kind needs a renderer.
+- **Flashcards** (`features/study/flashcards.ts` + `screens/study/FlashcardsScreen.tsx`): a pure reducer over the set's words to learn. Unlike study sessions, swipes write the Learned flag: the screen asks `learnedWrite(state, action)` for the change before dispatching. The card uses Gesture Handler `Gesture.Pan`/`Tap` + Reanimated, and calls back to JS with `scheduleOnRN` (react-native-worklets). The screen is a `fullScreenModal` with its own `GestureHandlerRootView`.
 
 ## Backup
 
@@ -86,4 +87,4 @@ The source data comes from Wiktionary (kaikki.org / wiktextract, CC BY-SA), not 
 
 ## Testing
 
-`jest.setup.js` globally mocks gesture-handler, reanimated, bottom-sheet and op-sqlite (as a no-op). `react-native-reorderable-list`, `ReanimatedSwipeable` and `react-native-bootsplash` are mocked, and `@dr.pogodin/react-native-fs` reports dictionaries as not installed. `__tests__/dictionary.test.ts` builds a dictionary in memory from real fixture lines with the same writer and queries. `__tests__/db.test.ts` replaces the op-sqlite mock with `test-utils/sqliteAdapter.ts`, an adapter over Node's built-in `node:sqlite`, so the real migrations and repository SQL run in Jest. Use that pattern for DB logic. `lucide-react-native` is mapped to its CJS build in `jest.config.js` because the RN preset doesn't transform `.mjs` files.
+`jest.config.js` uses `react-native-reanimated/jest/resolver` so code that imports reanimated or worklets directly loads in Jest. `jest.setup.js` globally mocks gesture-handler, reanimated, bottom-sheet and op-sqlite (as a no-op). `react-native-reorderable-list`, `ReanimatedSwipeable` and `react-native-bootsplash` are mocked, and `@dr.pogodin/react-native-fs` reports dictionaries as not installed. `__tests__/dictionary.test.ts` builds a dictionary in memory from real fixture lines with the same writer and queries. `__tests__/db.test.ts` replaces the op-sqlite mock with `test-utils/sqliteAdapter.ts`, an adapter over Node's built-in `node:sqlite`, so the real migrations and repository SQL run in Jest. Use that pattern for DB logic. `lucide-react-native` is mapped to its CJS build in `jest.config.js` because the RN preset doesn't transform `.mjs` files.

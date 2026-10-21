@@ -4,6 +4,7 @@ import type { Language, LanguageCode } from '../domain/types';
 export const BUNDLED_LANGUAGES: Language[] = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'de', name: 'German', nativeName: 'Deutsch' },
+  { code: 'zh', name: 'Chinese', nativeName: '中文' },
 ];
 
 export const DEFAULT_LANGUAGE_CODE = 'en';
@@ -21,6 +22,7 @@ export interface DictionaryInfo {
 const DICTIONARY_RELEASE =
   'https://github.com/Gorodb/words-memo/releases/download/dict-v1';
 
+/** Languages missing here (zh) have no dictionary yet: no download, no suggestions. */
 export const DICTIONARIES: Partial<Record<LanguageCode, DictionaryInfo>> = {
   en: { url: `${DICTIONARY_RELEASE}/en-ru.db`, sizeMB: 14 },
   de: { url: `${DICTIONARY_RELEASE}/de-ru.db`, sizeMB: 18 },

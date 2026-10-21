@@ -33,6 +33,7 @@ import {
   getWords,
   listWords,
   parseExamples,
+  resetLearned,
   setLearned,
   updateWord,
 } from '../src/db/repositories/words';
@@ -203,6 +204,23 @@ test('learned words go below; toggling moves a word to the top of its part', asy
     'c',
     'a',
   ]);
+});
+
+test('reset progress marks every word of the set as not learned', async () => {
+  const set = await createSet('en', 'Reset');
+  const other = await createSet('en', 'Other');
+  const make = (setId: string, term: string) =>
+    createWord(setId, { term, translation: term, examples: [] });
+  const a = await make(set.id, 'a');
+  const b = await make(set.id, 'b');
+  const c = await make(other.id, 'c');
+  await setLearned(a.id, true);
+  await setLearned(b.id, true);
+  await setLearned(c.id, true);
+
+  await resetLearned(set.id);
+  expect((await listWords(set.id)).map(w => w.learnedAt)).toEqual([null, null]);
+  expect((await listWords(other.id))[0].learnedAt).not.toBeNull();
 });
 
 test('settings upsert', () => {

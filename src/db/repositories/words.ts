@@ -149,6 +149,16 @@ export async function setLearned(id: ID, learned: boolean): Promise<void> {
   notifyChanged('words');
 }
 
+/** Marks every learned word of the set as not learned. Keeps their order. */
+export async function resetLearned(setId: ID): Promise<void> {
+  await getDb().execute(
+    `UPDATE words SET learned_at = NULL, updated_at = ?
+     WHERE set_id = ? AND learned_at IS NOT NULL`,
+    [Date.now(), setId],
+  );
+  notifyChanged('words');
+}
+
 export async function deleteWord(id: ID): Promise<void> {
   await getDb().execute('DELETE FROM words WHERE id = ?', [id]);
   notifyChanged('words');

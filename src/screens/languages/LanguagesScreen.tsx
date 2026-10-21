@@ -18,6 +18,9 @@ function dictionarySubtitle(
 ): string {
   const size = DICTIONARIES[language.code]?.sizeMB;
   const base = `${language.nativeName} → Русский`;
+  if (!DICTIONARIES[language.code]) {
+    return `${base} · no dictionary yet`;
+  }
   switch (status?.state) {
     case 'installed':
       return `${base} · dictionary installed`;
@@ -103,8 +106,8 @@ export function LanguagesScreen() {
       )}
       ListFooterComponent={
         <Text style={[styles.footer, { color: colors.textSecondary }]}>
-          Tap a language to switch to it. Dictionaries add suggestions with
-          word forms and translations when you add words.
+          Tap a language to switch to it. Dictionaries add suggestions with word
+          forms and translations when you add words.
         </Text>
       }
     />

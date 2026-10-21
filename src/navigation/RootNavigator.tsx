@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TabNavigator } from './TabNavigator';
 import { SetScreen } from '../screens/sets/SetScreen';
+import { FlashcardsScreen } from '../screens/study/FlashcardsScreen';
 import { StudyScreen } from '../screens/study/StudyScreen';
 import type { RootStackParamList } from './types';
 
@@ -21,6 +22,12 @@ export function RootNavigator() {
         options={({ route }) => ({ title: route.params.title })}
       />
       <Stack.Screen name="Study" component={StudyScreen} />
+      <Stack.Screen
+        name="Flashcards"
+        component={FlashcardsScreen}
+        // No swipe-down to dismiss on iOS: it would fight the card swipes.
+        options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+      />
     </Stack.Navigator>
   );
 }
