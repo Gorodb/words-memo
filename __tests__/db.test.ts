@@ -34,7 +34,9 @@ import {
   listWords,
   parseExamples,
   resetLearned,
+  sampleWordsOutsideSet,
   setLearned,
+  setLearnedMany,
   updateWord,
 } from '../src/db/repositories/words';
 import { MAX_PINNED, PinLimitError } from '../src/domain/pinning';
@@ -531,5 +533,40 @@ describe('custom languages', () => {
       ]).rows,
     ).toEqual([]);
     expect((await listSets('en')).some(s => s.id === other.id)).toBe(true);
+  });
+});
+
+describe('study words helpers', () => {
+  test('setLearnedMany marks words; sampleWordsOutsideSet skips the set and other languages', async () => {
+    const set = await createSet('de', 'SW set');
+    const other = await createSet('de', 'SW other');
+    const english = await createSet('en', 'SW english');
+    const a = await createWord(set.id, {
+      term: 'a',
+      translation: 'а',
+      examples: [],
+    });
+    const b = await createWord(set.id, {
+      term: 'b',
+      translation: 'б',
+      examples: [],
+    });
+    const c = await createWord(other.id, {
+      term: 'c',
+      translation: 'в',
+      examples: [],
+    });
+    await createWord(english.id, { term: 'e', translation: 'е', examples: [] });
+
+    await setLearnedMany([a.id, b.id]);
+    expect((await listWords(set.id)).every(w => w.learnedAt !== null)).toBe(
+      true,
+    );
+
+    const sample = await sampleWordsOutsideSet(set.id, 1000);
+    const ids = sample.map(w => w.id);
+    expect(ids).toContain(c.id);
+    expect(ids).not.toContain(a.id);
+    expect(sample.every(w => w.term !== 'e')).toBe(true);
   });
 });

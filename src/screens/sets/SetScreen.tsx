@@ -14,6 +14,7 @@ import {
   CircleEllipsis,
   GalleryHorizontalEnd,
   GraduationCap,
+  ListChecks,
   Plus,
 } from 'lucide-react-native';
 import { ActionTile } from '../../components/ActionTile';
@@ -39,6 +40,7 @@ import { useQuery } from '../../db/useQuery';
 import type { ID, Word } from '../../domain/types';
 import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
+import { STUDY_WORDS_COUNT } from '../../features/study/studyWords';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
@@ -54,7 +56,7 @@ interface Section {
 }
 
 /**
- * Words of one set: Learn / Flashcards tiles, then "To learn" and "Learned".
+ * Words of one set: Learn / Flashcards / Study words tiles, then "To learn" and "Learned".
  * Header: + (add word) and ⋯ (Edit set / Select words / Study … / Reset).
  */
 export function SetScreen({ navigation, route }: Props) {
@@ -137,15 +139,24 @@ export function SetScreen({ navigation, route }: Props) {
     (wordIds: ID[]) =>
       openMenu({
         title: 'Study mode',
-        items: STUDY_MODES.map(mode => ({
-          label: mode.title,
-          onPress: () => {
-            setSelected(null);
-            navigation.navigate('Study', { wordIds, modeId: mode.id });
+        items: [
+          ...STUDY_MODES.map(mode => ({
+            label: mode.title,
+            onPress: () => {
+              setSelected(null);
+              navigation.navigate('Study', { wordIds, modeId: mode.id });
+            },
+          })),
+          {
+            label: 'Study words',
+            onPress: () => {
+              setSelected(null);
+              navigation.navigate('StudyWords', { setId, wordIds });
+            },
           },
-        })),
+        ],
       }),
-    [openMenu, navigation],
+    [openMenu, navigation, setId],
   );
 
   /** Study modes over the words to learn, or the whole set once all are learned. */
@@ -192,6 +203,31 @@ export function SetScreen({ navigation, route }: Props) {
           onPress: async () => {
             await resetLearned(set.id);
             navigation.navigate('Flashcards', { setId: set.id });
+          },
+        },
+      ],
+    );
+  }, [set, words, navigation]);
+
+  /** "Study words" over the words to learn; offers a reset once all are learned. */
+  const openStudyWords = useCallback(() => {
+    if (!set) {
+      return;
+    }
+    if ((words ?? []).some(w => w.learnedAt === null)) {
+      navigation.navigate('StudyWords', { setId: set.id });
+      return;
+    }
+    Alert.alert(
+      'All words are learned',
+      'Study words picks words to learn. Reset progress to go through the whole set again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset and start',
+          onPress: async () => {
+            await resetLearned(set.id);
+            navigation.navigate('StudyWords', { setId: set.id });
           },
         },
       ],
@@ -343,21 +379,41 @@ export function SetScreen({ navigation, route }: Props) {
         ]}
         ListHeaderComponent={
           words && words.length > 0 && !selected ? (
-            <View style={styles.tiles}>
-              <ActionTile
-                icon={GraduationCap}
-                title="Learn"
-                subtitle={`${STUDY_MODES.length} study modes`}
-                onPress={openLearn}
-              />
-              <ActionTile
-                icon={GalleryHorizontalEnd}
-                title="Flashcards"
-                subtitle={
-                  toLearnCount > 0 ? `${toLearnCount} to learn` : 'All learned'
-                }
-                onPress={openFlashcards}
-              />
+            <View style={styles.header}>
+              <View style={styles.tiles}>
+                <ActionTile
+                  icon={GraduationCap}
+                  title="Learn"
+                  // The study modes plus "Study words".
+                  subtitle={`${STUDY_MODES.length + 1} study modes`}
+                  onPress={openLearn}
+                />
+                <ActionTile
+                  icon={GalleryHorizontalEnd}
+                  title="Flashcards"
+                  subtitle={
+                    toLearnCount > 0
+                      ? `${toLearnCount} to learn`
+                      : 'All learned'
+                  }
+                  onPress={openFlashcards}
+                />
+              </View>
+              <View style={styles.tiles}>
+                <ActionTile
+                  icon={ListChecks}
+                  title="Study words"
+                  subtitle={
+                    toLearnCount > 0
+                      ? `${Math.min(
+                          toLearnCount,
+                          STUDY_WORDS_COUNT,
+                        )} words · choose, then write`
+                      : 'All learned'
+                  }
+                  onPress={openStudyWords}
+                />
+              </View>
             </View>
           ) : undefined
         }
@@ -428,7 +484,8 @@ const LIST_END_SPACE = 32;
 const styles = StyleSheet.create({
   grow: { flexGrow: 1 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  tiles: { flexDirection: 'row', gap: 12, padding: 12, paddingBottom: 4 },
+  header: { padding: 12, paddingBottom: 4, gap: 12 },
+  tiles: { flexDirection: 'row', gap: 12 },
   bar: {
     position: 'absolute',
     left: 0,

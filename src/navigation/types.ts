@@ -21,6 +21,11 @@ export type RootStackParamList = {
   Study: { wordIds: ID[]; modeId: StudyModeId };
   /** Flashcards over the set's words that are not learned yet. */
   Flashcards: { setId: ID };
+  /**
+   * "Study words" game over up to 10 random words: of `wordIds` when given
+   * (a selection), else of the set's words that are not learned.
+   */
+  StudyWords: { setId: ID; wordIds?: ID[] };
 };
 
 declare global {

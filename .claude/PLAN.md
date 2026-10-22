@@ -28,9 +28,10 @@ RootStack
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
 │  ├─ LanguagesTab     en / de + custom ✓ active, dictionary Download / Remove; [+] new language; long-press custom → Rename / Delete
 │  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
-├─ Set                 Learn / Flashcards tiles, "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
+├─ Set                 Learn / Flashcards / Study words tiles, "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
 ├─ Study               one session in one study mode (opens on top of the tabs)
-└─ Flashcards          full-screen modal: [×] counter [shuffle]; swipe cards of the words to learn
+├─ Flashcards          full-screen modal: [×] counter [shuffle]; swipe cards of the words to learn
+└─ StudyWords          [×] "Round N of 3"; choose / choose / write game over 10 words, then results
 ```
 
 `Set` and the learning screens sit in the root stack, so both Folders and Sets can open them and they cover the tab bar.
@@ -151,6 +152,17 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
   - Swipe right = learned, swipe left = to learn. **Both write the Learned flag to the database** (only when it changes).
   - Undo goes back one card and restores its Learned flag.
   - At the end: "Repeat N to learn" starts a round over the cards still to learn.
+## Study words
+
+`features/study/studyWords.ts` (pure reducer, unit tested) + `screens/study/StudyWordsScreen.tsx`.
+
+- **Words**: up to 10 random words. From the tile: the set's words to learn. From the Learn menu (or a selection → Study): picked from those words.
+- **Rounds**: 1. see the word, choose the translation of 4; 2. see the translation, choose the word of 4; 3. see the translation, type the word (Hint adds a letter, Check).
+  - Wrong options come from other words of the set, then (if there are too few) from other sets of the same language, all different from the answer.
+  - After an answer: the right option is green, a wrong pick red; typed answers are green, dark yellow (with a hint) or red with the right answer. A wrong typed answer offers **Mark as correct** for typos: it then counts as right, unless a Hint was used (still a mistake, still repeated, not learned). Then Next.
+  - Each round ends with one repeat pass over the words answered wrong (or with a hint) in it. Mistakes in the repeat pass don't repeat again.
+- **End**: words without any mistake or hint in the whole game are marked learned in the database. No mistakes at all: "Well done!" screen; otherwise Learned / To learn lists. Close returns to the set; Continue learning starts a new game with 10 words to learn, this game's mistakes first.
+
 - **Reset progress** (set ⋯ menu): marks every word of the set as not learned, after a confirmation.
 
 ## Steps
@@ -164,6 +176,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 7. Polish: app icon, iOS build check on the Mac.
 8. ✅ **Set tiles + flashcards**: Learn / Flashcards tiles on the Set screen, flashcards game, Reset progress.
 9. ✅ **Custom languages**: add / rename / delete languages without a dictionary; backups carry them.
+10. ✅ **Study words**: three-round game with learned marking and Continue learning.
 
 ## Decisions
 

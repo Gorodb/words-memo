@@ -142,11 +142,55 @@ export async function updateWord(id: ID, input: WordInput): Promise<void> {
 export async function setLearned(id: ID, learned: boolean): Promise<void> {
   const now = Date.now();
   await getDb().execute(
-    `UPDATE words SET learned_at = ?, sort_at = ${NEXT_SORT_AT('words.set_id')}, updated_at = ?
+    `UPDATE words SET learned_at = ?, sort_at = ${NEXT_SORT_AT(
+      'words.set_id',
+    )}, updated_at = ?
      WHERE id = ?`,
     [learned ? now : null, now, now, id],
   );
   notifyChanged('words');
+}
+
+/** Marks several words as learned (one transaction, one change event). */
+export async function setLearnedMany(ids: ID[]): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+  const now = Date.now();
+  await getDb().transaction(async tx => {
+    for (const id of ids) {
+      await tx.execute(
+        `UPDATE words SET learned_at = ?, sort_at = ${NEXT_SORT_AT(
+          'words.set_id',
+        )}, updated_at = ?
+         WHERE id = ?`,
+        [now, now, now, id],
+      );
+    }
+  });
+  notifyChanged('words');
+}
+
+/**
+ * Random words of the same language from other sets, as wrong options in
+ * study games when the set itself has too few words.
+ */
+export async function sampleWordsOutsideSet(
+  setId: ID,
+  limit: number,
+): Promise<Pick<Word, 'id' | 'term' | 'translation'>[]> {
+  const { rows } = await getDb().execute(
+    `SELECT id, term, translation FROM words
+     WHERE set_id <> ?
+       AND language_code = (SELECT language_code FROM sets WHERE id = ?)
+     ORDER BY RANDOM() LIMIT ?`,
+    [setId, setId, limit],
+  );
+  return rows.map(row => ({
+    id: row.id as string,
+    term: row.term as string,
+    translation: row.translation as string,
+  }));
 }
 
 /** Marks every learned word of the set as not learned. Keeps their order. */
