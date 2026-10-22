@@ -3,7 +3,10 @@
  */
 
 export type ID = string;
-/** ISO-639-1 code of the language being learned, e.g. 'en', 'de'. */
+/**
+ * ISO-639-1 code of a bundled language ('en', 'de'), or 'x-<id>' for a
+ * language the user added.
+ */
 export type LanguageCode = string;
 /** Milliseconds since epoch. */
 export type Timestamp = number;
@@ -12,8 +15,10 @@ export interface Language {
   code: LanguageCode;
   /** English name, e.g. 'German'. */
   name: string;
-  /** Native name, e.g. 'Deutsch'. */
+  /** Native name, e.g. 'Deutsch'. Same as `name` for custom languages. */
   nativeName: string;
+  /** Added by the user: no dictionary, can be renamed and deleted. */
+  custom?: boolean;
 }
 
 /** A user-ordered group that contains any number of sets of its language. */
@@ -94,6 +99,8 @@ export interface BackupFile {
   exportedAt: Timestamp;
   languages: Array<{
     code: LanguageCode;
+    /** Name of a custom language, so importing can create or match it. */
+    name?: string;
     /** Folders in manual order. */
     folders: BackupFolder[];
     sets: BackupSet[];

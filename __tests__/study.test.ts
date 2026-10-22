@@ -35,6 +35,7 @@ const run = (state: SessionState, ...actions: SessionAction[]) =>
 test('modes pick the right prompt and answer', () => {
   const s1 = createSession(studyMode('translation-word'), words);
   expect(s1.cards['1']).toMatchObject({
+    learned: false,
     prompt: 'яблоко',
     answer: 'der Apfel, die Äpfel',
   });
@@ -76,10 +77,10 @@ test('write: check is whole-string and case-insensitive', () => {
   expect(isCorrect('Apfel', 'der Apfel, die Äpfel')).toBe(false);
 });
 
-test('write: wrong → show → try again resets; mark as correct', () => {
+test('write: wrong → try again resets; mark as correct', () => {
   let s = createSession(studyMode('write-word'), words);
-  s = run(s, { type: 'check', id: '2', input: 'x' }, { type: 'show', id: '2' });
-  expect(s.progress['2']).toMatchObject({ status: 'shown' });
+  s = run(s, { type: 'check', id: '2', input: 'x' });
+  expect(s.progress['2']).toMatchObject({ status: 'wrong' });
   s = run(s, { type: 'retry', id: '2' });
   expect(s.progress['2']).toEqual({
     kind: 'write',
@@ -87,6 +88,7 @@ test('write: wrong → show → try again resets; mark as correct', () => {
     hints: 0,
     revision: 0,
     attempt: 1,
+    hinted: false,
   });
   s = run(
     s,
@@ -96,6 +98,35 @@ test('write: wrong → show → try again resets; mark as correct', () => {
   expect(s.progress['2']).toMatchObject({ status: 'correct' });
   s = run(s, { type: 'hideLearned' });
   expect(visibleIds(s)).toEqual(['1', '3']);
+});
+
+test('write: a hint or a peek makes a correct answer "assisted" until Try again', () => {
+  let s = createSession(studyMode('write-word'), words);
+  s = run(
+    s,
+    { type: 'hint', id: '2', input: '' },
+    { type: 'check', id: '2', input: 'essen' },
+  );
+  expect(s.progress['2']).toMatchObject({ status: 'assisted', hinted: true });
+
+  s = run(
+    s,
+    { type: 'peek', id: '3' },
+    { type: 'check', id: '3', input: 'x' },
+    { type: 'markCorrect', id: '3' },
+  );
+  expect(s.progress['3']).toMatchObject({ status: 'assisted' });
+
+  // Assisted answers don't count as learned in the session.
+  s = run(s, { type: 'hideLearned' });
+  expect(visibleIds(s)).toEqual(['1', '2', '3']);
+
+  s = run(
+    s,
+    { type: 'retry', id: '2' },
+    { type: 'check', id: '2', input: 'essen' },
+  );
+  expect(s.progress['2']).toMatchObject({ status: 'correct', hinted: false });
 });
 
 test('write: hint keeps the correctly typed beginning and adds one letter', () => {

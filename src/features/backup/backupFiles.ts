@@ -16,7 +16,6 @@ import {
   types,
 } from '@react-native-documents/picker';
 import Share from 'react-native-share';
-import { BUNDLED_LANGUAGES } from '../../config/languages';
 import {
   applyImportPlan,
   exportAll,
@@ -24,6 +23,7 @@ import {
   loadExisting,
 } from '../../db/repositories/backup';
 import type { BackupFile, ID } from '../../domain/types';
+import { useSettingsStore } from '../../store/settingsStore';
 import { createId } from '../../utils/id';
 import { parseBackup, safeFileName } from './format';
 import { planImport, type ImportPlan } from './merge';
@@ -127,9 +127,14 @@ export function prepareImport(backup: BackupFile): ImportPlan {
   return planImport(
     backup,
     loadExisting,
-    BUNDLED_LANGUAGES.map(l => l.code),
+    useSettingsStore.getState().languages,
     createId,
   );
 }
 
-export const runImport = applyImportPlan;
+export async function runImport(plan: ImportPlan): Promise<void> {
+  await applyImportPlan(plan);
+  if (plan.createLanguages.length) {
+    useSettingsStore.getState().reloadLanguages();
+  }
+}

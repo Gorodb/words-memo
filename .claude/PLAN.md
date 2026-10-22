@@ -1,11 +1,11 @@
 # wordsLearning: plan
 
-Offline React Native app (no backend, no login) for learning English, German and Chinese words with Russian translations.
+Offline React Native app (no backend, no login) for learning English and German words (plus languages the user adds) with Russian translations.
 
 ## Concepts
 
 ```
-Language (en, de, zh)
+Language (en, de, custom)
  ├─ WordSet           (belongs to the language; exists on its own)
  │   └─ Word
  └─ Folder            (manual drag-and-drop order; contains any number of sets)
@@ -26,7 +26,7 @@ RootStack
 │  │   ├─ Folders      header: "Folders · English" + [+] → new folder sheet; drag to reorder
 │  │   └─ Folder       header: [<] name, [add sets] → set picker sheet, [⋯] → Edit / Remove menu sheet
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
-│  ├─ LanguagesTab     en / de ✓ active, dictionary Download / Remove per language
+│  ├─ LanguagesTab     en / de + custom ✓ active, dictionary Download / Remove; [+] new language; long-press custom → Rename / Delete
 │  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
 ├─ Set                 Learn / Flashcards tiles, "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
 ├─ Study               one session in one study mode (opens on top of the tabs)
@@ -78,6 +78,7 @@ words    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code,
           learned_at (NULL = to learn), sort_at (list order), created_at, updated_at)
           INDEX (language_code, term_norm)          -- used by import merge
 settings (key PK, value)
+languages (code TEXT PK 'x-<id>', name, created_at)   -- custom languages only; bundled ones are in config
 ```
 
 `term_norm` = trim, collapse whitespace, Unicode NFC. **Case-sensitive**: "das Essen", "essen", "isst" and "hat gegessen" are all different words.
@@ -97,7 +98,7 @@ Words are **not unique**: the same term can be in several sets of one language.
   1. Sets and folders are matched by name per language, or created. Sets listed for a folder are added to it.
   2. A word matching by exact `(language_code, term_norm)` fully replaces translation and examples on **every** matching word. Each one keeps its set and its learned state.
   3. Other words are added to their set from the file, with their learned state.
-  4. Languages the app doesn't have are skipped and reported.
+  4. Custom languages are exported with their `name`. On import they match by code, then by name among custom languages, or are created. Unknown languages without a name are skipped and reported.
   5. Everything runs in one transaction.
 - **Code**:
   - `features/backup/format.ts`: validation of untrusted files.
@@ -132,8 +133,10 @@ Registry in `src/features/study/modes.ts`; session logic in `session.ts` (pure r
 2. **Word → translation**: tap to reveal or hide the translation.
 3. **Writing the word**:
    - **Hint** adds the next letter of the answer.
-   - **Check** compares the whole string, case-insensitive. A correct answer turns green.
-   - A wrong answer turns red and shows **Show**, **Mark as correct** and **Try again**.
+   - **Check** compares the whole string, case-insensitive.
+   - Correct turns green and shows **Hide** (this session) and **Learned** (sets the Learned flag in the database and hides the card).
+   - Correct after a Hint, or after holding Hint to peek, turns dark yellow and shows only **Try again**. It doesn't count for Hide learned.
+   - Wrong turns red, shows the right answer below the input right away, and offers **Mark as correct** and **Try again**.
 4. **Writing the translation**: the same, for the translation.
 
 Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or correct words for the rest of the session and doesn't change the Learned flag in the set.
@@ -160,6 +163,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 6. ✅ **Study modes**: registry plus the first 4 modes. Later: more modes, and spaced repetition.
 7. Polish: app icon, iOS build check on the Mac.
 8. ✅ **Set tiles + flashcards**: Learn / Flashcards tiles on the Set screen, flashcards game, Reset progress.
+9. ✅ **Custom languages**: add / rename / delete languages without a dictionary; backups carry them.
 
 ## Decisions
 
@@ -169,8 +173,9 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 - Platforms: Android and iOS. You'll sign and install the iOS build yourself as an .ipa.
 - Dictionaries come from Wiktionary, are kept out of git, and are downloaded by the app (GitHub Release).
 - Writing modes check the whole string (case-insensitive), and "Mark as correct" covers typos or a missing article.
-- "Hide learned" in study is session-only.
-- Chinese (`zh`) is a language without a dictionary for now: no download button and no suggestions. Its words are typed freely (characters, pinyin in the term or translation as you like).
+- "Hide learned" in study is session-only. The **Learned** button on a correct written answer is the one study action that changes the Learned flag.
+- **Custom languages**: the user can add a language by name (Languages tab → +). It has no dictionary, so words are always typed by hand. Its code is `x-<id>`. Deleting it (long-press → Delete, after a confirmation with counts) deletes its folders, sets and words; bundled languages can't be deleted. Names are unique, ignoring case.
+- Chinese (`zh`) is no longer bundled; add it as a custom language. Migration v6 turns existing Chinese data into a custom language "Chinese" (code `zh`).
 - Flashcards are the exception: their swipes change the Learned flag in the database. They show only the words to learn.
 - Sets are independent of folders. A folder contains sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are added to it.
 - Folders are sorted manually with drag and drop. New folders go to the end.

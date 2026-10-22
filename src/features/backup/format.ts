@@ -143,8 +143,10 @@ export function parseBackup(json: string, now = Date.now()): BackupFile {
         throw new BackupFormatError(`Language ${i + 1} is invalid.`);
       }
       const code = str(l.code, `Language ${i + 1} code`).trim();
+      const name = typeof l.name === 'string' ? l.name.trim() : '';
       return {
         code,
+        ...(name && { name }),
         folders: list(l.folders ?? [], `${code} folders`).map((f, j) =>
           parseFolder(f, `${code} folder ${j + 1}`, now),
         ),

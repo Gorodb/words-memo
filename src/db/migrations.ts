@@ -90,6 +90,21 @@ const MIGRATIONS: string[][] = [
     'ALTER TABLE folders ADD COLUMN pinned_at INTEGER',
     'ALTER TABLE sets ADD COLUMN pinned_at INTEGER',
   ],
+  // v5: languages the user adds (no dictionary); bundled ones stay in config.
+  [
+    `CREATE TABLE languages (
+      code TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`,
+  ],
+  // v6: Chinese is no longer bundled. Existing Chinese data stays as a custom language.
+  [
+    `INSERT INTO languages (code, name, created_at)
+     SELECT 'zh', 'Chinese', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+     WHERE EXISTS (SELECT 1 FROM sets WHERE language_code = 'zh')
+        OR EXISTS (SELECT 1 FROM folders WHERE language_code = 'zh')`,
+  ],
 ];
 
 /**

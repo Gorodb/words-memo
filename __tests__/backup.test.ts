@@ -1,4 +1,4 @@
-import type { BackupFile } from '../src/domain/types';
+import type { BackupFile, Language } from '../src/domain/types';
 import {
   BackupFormatError,
   parseBackup,
@@ -33,6 +33,9 @@ const empty = (): ExistingLanguage => ({
   folders: [],
   wordIdsByTerm: new Map(),
 });
+
+const known = (...codes: string[]): Language[] =>
+  codes.map(code => ({ code, name: code, nativeName: code }));
 
 function ids() {
   let n = 0;
@@ -129,7 +132,7 @@ describe('planImport', () => {
         },
       ]),
       () => ({ ...empty(), sets: [{ id: 'food', name: 'Food' }] }),
-      ['de'],
+      known('de'),
       ids(),
     );
     expect(plan.createSets.map(s => s.name)).toEqual(['New']);
@@ -173,7 +176,7 @@ describe('planImport', () => {
         },
       ]),
       () => existing,
-      ['de'],
+      known('de'),
       ids(),
     );
     expect(plan.updateWords).toEqual([
@@ -209,7 +212,7 @@ describe('planImport', () => {
         sets: [{ id: 'airport', name: 'Airport' }],
         folders: [{ id: 'travel', name: 'Travel', setIds: ['airport'] }],
       }),
-      ['en'],
+      known('en'),
       ids(),
     );
     expect(plan.createFolders.map(f => f.name)).toEqual(['Work']);
@@ -233,7 +236,7 @@ describe('planImport', () => {
         },
       ]),
       empty,
-      ['de', 'en'],
+      known('de', 'en'),
       ids(),
     );
     expect(plan.insertWords).toEqual([]);
@@ -241,5 +244,72 @@ describe('planImport', () => {
     expect(describeSummary(plan.summary)).toBe(
       "0 words added, 0 updated. Skipped languages this app doesn't have: fr.",
     );
+  });
+  test('a custom language is matched by code, then by name, or created', () => {
+    const file = backup([
+      {
+        code: 'x-same',
+        name: 'French',
+        folders: [],
+        sets: [
+          { name: 'A', createdAt: 1, updatedAt: 1, words: [word('chat')] },
+        ],
+      },
+      {
+        code: 'x-other',
+        name: ' latin ',
+        folders: [],
+        sets: [{ name: 'B', createdAt: 1, updatedAt: 1, words: [word('lux')] }],
+      },
+      {
+        code: 'x-new',
+        name: 'Esperanto',
+        folders: [],
+        sets: [
+          { name: 'C', createdAt: 1, updatedAt: 1, words: [word('saluton')] },
+        ],
+      },
+    ]);
+    const local: Language[] = [
+      ...known('en'),
+      {
+        code: 'x-same',
+        name: 'Français',
+        nativeName: 'Français',
+        custom: true,
+      },
+      { code: 'x-mine', name: 'Latin', nativeName: 'Latin', custom: true },
+    ];
+    const plan = planImport(file, empty, local, ids());
+    expect(plan.createLanguages).toEqual([
+      { code: 'x-new', name: 'Esperanto' },
+    ]);
+    expect(plan.insertWords.map(w => [w.term, w.languageCode])).toEqual([
+      ['chat', 'x-same'],
+      ['lux', 'x-mine'],
+      ['saluton', 'x-new'],
+    ]);
+    expect(plan.summary.skippedLanguages).toEqual([]);
+    expect(describeSummary(plan.summary)).toBe(
+      '3 words added, 0 updated, 3 new sets, new language Esperanto.',
+    );
+  });
+
+  test('a custom name never merges into a bundled language', () => {
+    const plan = planImport(
+      backup([
+        {
+          code: 'x-de',
+          name: 'de',
+          folders: [],
+          sets: [{ name: 'S', createdAt: 1, updatedAt: 1, words: [word('x')] }],
+        },
+      ]),
+      empty,
+      known('de'),
+      ids(),
+    );
+    expect(plan.createLanguages).toEqual([{ code: 'x-de', name: 'de' }]);
+    expect(plan.insertWords[0].languageCode).toBe('x-de');
   });
 });

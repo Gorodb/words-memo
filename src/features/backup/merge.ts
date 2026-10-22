@@ -5,13 +5,17 @@
  * - sets and folders are matched by name (per language) or created;
  * - a word matching an existing word by (language, term_norm) fully replaces
  *   translation and examples on EVERY matching word, which stay in their sets;
- * - other words are added to their set from the backup.
+ * - other words are added to their set from the backup;
+ * - a custom language (it has a name in the file) is matched by code, then
+ *   by name among the custom languages, or created.
  */
+import { findLanguageByName } from '../../domain/languages';
 import { normalizeTerm } from '../../domain/term';
 import type {
   BackupFile,
   Example,
   ID,
+  Language,
   LanguageCode,
   Timestamp,
 } from '../../domain/types';
@@ -24,6 +28,7 @@ export interface ExistingLanguage {
 }
 
 export interface ImportPlan {
+  createLanguages: Array<{ code: LanguageCode; name: string }>;
   createSets: Array<{
     id: ID;
     languageCode: LanguageCode;
@@ -60,6 +65,8 @@ export interface ImportSummary {
   wordsUpdated: number;
   setsCreated: number;
   foldersCreated: number;
+  /** Names of the custom languages that will be created. */
+  languagesCreated: string[];
   /** Languages in the file that this app doesn't have; their data is skipped. */
   skippedLanguages: LanguageCode[];
 }
@@ -67,10 +74,11 @@ export interface ImportSummary {
 export function planImport(
   backup: BackupFile,
   existing: (languageCode: LanguageCode) => ExistingLanguage,
-  knownLanguages: LanguageCode[],
+  knownLanguages: Language[],
   createId: () => ID,
 ): ImportPlan {
   const plan: ImportPlan = {
+    createLanguages: [],
     createSets: [],
     createFolders: [],
     addToFolder: [],
@@ -81,19 +89,44 @@ export function planImport(
       wordsUpdated: 0,
       setsCreated: 0,
       foldersCreated: 0,
+      languagesCreated: [],
       skippedLanguages: [],
     },
   };
   /** Count each existing word once, even if several backup words match it. */
   const updatedIds = new Set<ID>();
 
-  for (const language of backup.languages) {
-    if (!knownLanguages.includes(language.code)) {
-      if (!plan.summary.skippedLanguages.includes(language.code)) {
-        plan.summary.skippedLanguages.push(language.code);
+  const languages = [...knownLanguages];
+  /** The local language for a language of the file; null = skip it. */
+  const resolveLanguage = (code: LanguageCode, name?: string) => {
+    if (languages.some(l => l.code === code)) {
+      return code;
+    }
+    if (!name) {
+      return null;
+    }
+    const sameName = findLanguageByName(
+      languages.filter(l => l.custom),
+      name,
+    );
+    if (sameName) {
+      return sameName.code;
+    }
+    languages.push({ code, name, nativeName: name, custom: true });
+    plan.createLanguages.push({ code, name });
+    plan.summary.languagesCreated.push(name);
+    return code;
+  };
+
+  for (const fileLanguage of backup.languages) {
+    const code = resolveLanguage(fileLanguage.code, fileLanguage.name);
+    if (!code) {
+      if (!plan.summary.skippedLanguages.includes(fileLanguage.code)) {
+        plan.summary.skippedLanguages.push(fileLanguage.code);
       }
       continue;
     }
+    const language = { ...fileLanguage, code };
     const current = existing(language.code);
     const setIdByName = new Map<string, ID>();
     for (const set of current.sets) {
@@ -211,6 +244,13 @@ export function describeSummary(summary: ImportSummary): string {
       `${summary.foldersCreated} new ${
         summary.foldersCreated === 1 ? 'folder' : 'folders'
       }`,
+    );
+  }
+  if (summary.languagesCreated.length) {
+    parts.push(
+      `${
+        summary.languagesCreated.length === 1 ? 'new language' : 'new languages'
+      } ${summary.languagesCreated.join(', ')}`,
     );
   }
   let text = parts.join(', ') + '.';

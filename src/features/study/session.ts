@@ -1,11 +1,13 @@
 /**
  * Study session state as a pure reducer (unit tested). The session lives only
- * in memory: hiding words or marking answers never changes the database.
+ * in memory; the screen's "Learned" button is the one action that writes to
+ * the database, outside the reducer.
  */
 import type { ID, Word } from '../../domain/types';
 import type { StudyMode } from './modes';
 
-export type WriteStatus = 'idle' | 'correct' | 'wrong' | 'shown';
+/** assisted: correct, but a Hint (or peek at the answer) was used. */
+export type WriteStatus = 'idle' | 'correct' | 'assisted' | 'wrong';
 
 export type CardProgress =
   | { kind: 'reveal'; revealed: boolean }
@@ -18,12 +20,16 @@ export type CardProgress =
       revision: number;
       /** Bumped on "Try again" so the input starts empty. */
       attempt: number;
+      /** Hint pressed or held during this attempt. */
+      hinted: boolean;
     };
 
 export interface StudyCard {
   id: ID;
   prompt: string;
   answer: string;
+  /** Learned flag in the database when the session started. */
+  learned: boolean;
 }
 
 export interface SessionState {
@@ -44,14 +50,22 @@ export type SessionAction =
   | { type: 'check'; id: ID; input: string }
   /** `input`: what is typed now; its correct beginning is kept. */
   | { type: 'hint'; id: ID; input: string }
-  | { type: 'show'; id: ID }
+  /** Hint held: the answer was shown over the input. */
+  | { type: 'peek'; id: ID }
   | { type: 'retry'; id: ID }
   | { type: 'markCorrect'; id: ID };
 
 function initialProgress(mode: StudyMode): CardProgress {
   return mode.kind === 'reveal'
     ? { kind: 'reveal', revealed: false }
-    : { kind: 'write', status: 'idle', hints: 0, revision: 0, attempt: 0 };
+    : {
+        kind: 'write',
+        status: 'idle',
+        hints: 0,
+        revision: 0,
+        attempt: 0,
+        hinted: false,
+      };
 }
 
 export function createSession(mode: StudyMode, words: Word[]): SessionState {
@@ -60,7 +74,12 @@ export function createSession(mode: StudyMode, words: Word[]): SessionState {
     cards: Object.fromEntries(
       words.map(w => [
         w.id,
-        { id: w.id, prompt: w[mode.prompt], answer: w[mode.answer] },
+        {
+          id: w.id,
+          prompt: w[mode.prompt],
+          answer: w[mode.answer],
+          learned: w.learnedAt !== null,
+        },
       ]),
     ),
     order: words.map(w => w.id),
@@ -106,7 +125,7 @@ export function visibleIds(state: SessionState): ID[] {
   return state.order.filter(id => !hidden.has(id));
 }
 
-/** Revealed (reveal modes) or answered correctly (write modes). */
+/** Revealed (reveal modes) or answered correctly without help (write modes). */
 export function isLearnedInSession(
   progress: CardProgress | undefined,
 ): boolean {
@@ -143,6 +162,10 @@ function updateWrite(
   return next === current
     ? state
     : { ...state, progress: { ...state.progress, [id]: next } };
+}
+
+function correctStatus(p: { hinted: boolean }): WriteStatus {
+  return p.hinted ? 'assisted' : 'correct';
 }
 
 export function sessionReducer(
@@ -190,7 +213,9 @@ export function sessionReducer(
         p.status === 'idle'
           ? {
               ...p,
-              status: isCorrect(action.input, answer) ? 'correct' : 'wrong',
+              status: isCorrect(action.input, answer)
+                ? correctStatus(p)
+                : 'wrong',
             }
           : p,
       );
@@ -207,14 +232,15 @@ export function sessionReducer(
               ...p,
               hints: Math.min(correct + 1, length),
               revision: p.revision + 1,
+              hinted: true,
             }
           : p,
       );
     }
 
-    case 'show':
+    case 'peek':
       return updateWrite(state, action.id, p =>
-        p.status === 'wrong' ? { ...p, status: 'shown' } : p,
+        p.status === 'idle' && !p.hinted ? { ...p, hinted: true } : p,
       );
 
     case 'retry':
@@ -223,13 +249,12 @@ export function sessionReducer(
         status: 'idle',
         hints: 0,
         attempt: p.attempt + 1,
+        hinted: false,
       }));
 
     case 'markCorrect':
       return updateWrite(state, action.id, p =>
-        p.status === 'wrong' || p.status === 'shown'
-          ? { ...p, status: 'correct' }
-          : p,
+        p.status === 'wrong' ? { ...p, status: correctStatus(p) } : p,
       );
   }
 }

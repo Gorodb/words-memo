@@ -51,6 +51,21 @@ async function setsWithWords(
   return result;
 }
 
+/** Names of custom languages by code; bundled languages aren't listed. */
+async function customLanguageNames(): Promise<Map<LanguageCode, string>> {
+  const { rows } = await getDb().execute('SELECT code, name FROM languages');
+  return new Map(rows.map(r => [r.code as string, r.name as string]));
+}
+
+/** A file entry for a language; custom languages carry their name. */
+function languageEntryFor(
+  code: LanguageCode,
+  names: Map<LanguageCode, string>,
+): BackupFile['languages'][number] {
+  const name = names.get(code);
+  return { code, ...(name !== undefined && { name }), folders: [], sets: [] };
+}
+
 /** Everything: all languages, folders (manual order) and sets with words. */
 export async function exportAll(): Promise<BackupFile> {
   const db = getDb();
@@ -62,11 +77,12 @@ export async function exportAll(): Promise<BackupFile> {
     'SELECT folder_id, set_id FROM folder_sets ORDER BY added_at',
   );
 
+  const names = await customLanguageNames();
   const languages = new Map<LanguageCode, BackupFile['languages'][number]>();
   const languageEntry = (code: LanguageCode) => {
     let entry = languages.get(code);
     if (!entry) {
-      entry = { code, folders: [], sets: [] };
+      entry = languageEntryFor(code, names);
       languages.set(code, entry);
     }
     return entry;
@@ -100,13 +116,11 @@ export async function exportSets(setIds: ID[]): Promise<BackupFile> {
     `id IN (${setIds.map(() => '?').join(', ')})`,
     setIds,
   );
+  const names = await customLanguageNames();
   const languages = new Map<LanguageCode, BackupFile['languages'][number]>();
   for (const { languageCode, ...set } of sets.values()) {
-    const entry = languages.get(languageCode) ?? {
-      code: languageCode,
-      folders: [],
-      sets: [],
-    };
+    const entry =
+      languages.get(languageCode) ?? languageEntryFor(languageCode, names);
     entry.sets.push(set);
     languages.set(languageCode, entry);
   }
@@ -160,6 +174,12 @@ export function loadExisting(languageCode: LanguageCode): ExistingLanguage {
 export async function applyImportPlan(plan: ImportPlan): Promise<void> {
   const now = Date.now();
   await getDb().transaction(async tx => {
+    for (const l of plan.createLanguages) {
+      await tx.execute(
+        'INSERT OR IGNORE INTO languages (code, name, created_at) VALUES (?, ?, ?)',
+        [l.code, l.name, now],
+      );
+    }
     for (const s of plan.createSets) {
       await tx.execute(
         'INSERT INTO sets (id, language_code, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',

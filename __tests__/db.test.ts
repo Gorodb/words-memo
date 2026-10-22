@@ -38,6 +38,12 @@ import {
   updateWord,
 } from '../src/db/repositories/words';
 import { MAX_PINNED, PinLimitError } from '../src/domain/pinning';
+import { BUNDLED_LANGUAGES } from '../src/config/languages';
+import {
+  createLanguage,
+  deleteLanguage,
+  listCustomLanguages,
+} from '../src/db/repositories/languages';
 import {
   applyImportPlan,
   exportAll,
@@ -305,6 +311,22 @@ test('migration v2 → v3: examples become pairs, sort order from creation time'
   expect(raw.executeSync('PRAGMA user_version').rows[0].user_version).toBe(3);
 });
 
+test('migration v6: existing Chinese data becomes a custom language', () => {
+  const withData = openNodeSqlite() as unknown as DB;
+  migrate(withData, 5);
+  withData.executeSync(
+    "INSERT INTO sets VALUES ('s1', 'zh', 'Set', 1, 1, NULL)",
+  );
+  migrate(withData, 6);
+  expect(withData.executeSync('SELECT code, name FROM languages').rows).toEqual(
+    [{ code: 'zh', name: 'Chinese' }],
+  );
+
+  const empty = openNodeSqlite() as unknown as DB;
+  migrate(empty, 6);
+  expect(empty.executeSync('SELECT * FROM languages').rows).toEqual([]);
+});
+
 test('parseExamples accepts legacy strings and pairs', () => {
   expect(parseExamples('["a", {"text": "b", "translation": "б"}]')).toEqual([
     { text: 'a', translation: '' },
@@ -404,7 +426,7 @@ describe('backup round trip', () => {
     const file = parseBackup(JSON.stringify(shared));
 
     await deleteSet(set.id);
-    const plan = planImport(file, loadExisting, ['de', 'en'], createId);
+    const plan = planImport(file, loadExisting, BUNDLED_LANGUAGES, createId);
     expect(plan.summary).toMatchObject({ wordsAdded: 2, setsCreated: 1 });
     await applyImportPlan(plan);
 
@@ -419,7 +441,7 @@ describe('backup round trip', () => {
     expect(after.map(strip)).toEqual(before.map(strip));
 
     // Importing the same file again only updates; no duplicates.
-    const again = planImport(file, loadExisting, ['de', 'en'], createId);
+    const again = planImport(file, loadExisting, BUNDLED_LANGUAGES, createId);
     expect(again.summary).toMatchObject({
       wordsAdded: 0,
       wordsUpdated: 2,
@@ -440,5 +462,74 @@ describe('backup round trip', () => {
       'Full set',
     ]);
     expect(en.sets.some(s => s.name === 'Full set')).toBe(true);
+  });
+});
+
+describe('custom languages', () => {
+  test('are listed, exported with their name and re-created on import', async () => {
+    const french = await createLanguage(' French ');
+    expect(french.code.startsWith('x-')).toBe(true);
+    expect(listCustomLanguages()).toContainEqual({
+      code: french.code,
+      name: 'French',
+      nativeName: 'French',
+      custom: true,
+    });
+    const set = await createSet(french.code, 'Animaux');
+    await createWord(set.id, {
+      term: 'le chat',
+      translation: 'кот',
+      examples: [],
+    });
+
+    const shared = await exportSets([set.id]);
+    expect(shared.languages[0]).toMatchObject({
+      code: french.code,
+      name: 'French',
+    });
+    const full = await exportAll();
+    expect(full.languages.find(l => l.code === 'de')?.name).toBeUndefined();
+
+    await deleteLanguage(french.code);
+    expect(listCustomLanguages().some(l => l.code === french.code)).toBe(false);
+    expect(await listSets(french.code)).toEqual([]);
+
+    const file = parseBackup(JSON.stringify(shared));
+    const plan = planImport(file, loadExisting, BUNDLED_LANGUAGES, createId);
+    expect(plan.summary.languagesCreated).toEqual(['French']);
+    await applyImportPlan(plan);
+    expect(listCustomLanguages().map(l => l.name)).toContain('French');
+    const [restored] = await listSets(french.code);
+    expect((await listWords(restored.id)).map(w => w.term)).toEqual([
+      'le chat',
+    ]);
+  });
+
+  test('deleting a language deletes its folders, sets and words only', async () => {
+    const lang = await createLanguage('Latin');
+    const folder = await createFolder(lang.code, 'F');
+    const set = await createSet(lang.code, 'S', folder.id);
+    await createWord(set.id, {
+      term: 'lux',
+      translation: 'свет',
+      examples: [],
+    });
+    const other = await createSet('en', 'Keep me');
+
+    await deleteLanguage(lang.code);
+    const left = (table: string) =>
+      Number(
+        db.executeSync(
+          `SELECT COUNT(*) AS n FROM ${table} WHERE language_code = ?`,
+          [lang.code],
+        ).rows[0].n,
+      );
+    expect([left('folders'), left('sets'), left('words')]).toEqual([0, 0, 0]);
+    expect(
+      db.executeSync('SELECT * FROM folder_sets WHERE folder_id = ?', [
+        folder.id,
+      ]).rows,
+    ).toEqual([]);
+    expect((await listSets('en')).some(s => s.id === other.id)).toBe(true);
   });
 });

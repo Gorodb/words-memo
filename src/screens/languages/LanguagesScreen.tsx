@@ -1,21 +1,34 @@
-import React from 'react';
+import React, { useCallback, useLayoutEffect } from 'react';
 import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
-import { Check } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Check, Plus } from 'lucide-react-native';
+import { useActionMenu } from '../../components/ActionMenuSheet';
+import { IconButton } from '../../components/IconButton';
+import { confirmDelete } from '../../components/itemActions';
 import { ListRow } from '../../components/ListRow';
 import { TextButton } from '../../components/TextButton';
-import { BUNDLED_LANGUAGES, DICTIONARIES } from '../../config/languages';
+import { useFormSheet } from '../../components/formSheet/FormSheet';
+import { nameForm } from '../../components/formSheet/forms';
+import { DICTIONARIES } from '../../config/languages';
+import { countLanguageContent } from '../../db/repositories/languages';
 import type { Language } from '../../domain/types';
 import {
   useDictionaryStore,
   type DictionaryStatus,
 } from '../../features/dictionary/dictionaryStore';
+import type { TabParamList } from '../../navigation/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
+import { plural } from '../../utils/plural';
 
 function dictionarySubtitle(
   language: Language,
   status: DictionaryStatus | undefined,
 ): string {
+  if (language.custom) {
+    return 'Custom · no dictionary, words are typed by hand';
+  }
   const size = DICTIONARIES[language.code]?.sizeMB;
   const base = `${language.nativeName} → Русский`;
   if (!DICTIONARIES[language.code]) {
@@ -35,13 +48,93 @@ function dictionarySubtitle(
   }
 }
 
+/** "2 sets and 35 words will be deleted." for the delete confirmation. */
+function deleteWarning(content: { sets: number; words: number }): string {
+  if (content.sets === 0) {
+    return 'Its folders will be deleted.';
+  }
+  return `${plural(content.sets, 'set')} and ${plural(
+    content.words,
+    'word',
+  )} will be deleted, along with its folders. Export a backup first if you might need them.`;
+}
+
 export function LanguagesScreen() {
   const { colors } = useAppTheme();
+  const navigation =
+    useNavigation<BottomTabNavigationProp<TabParamList, 'LanguagesTab'>>();
+  const languages = useSettingsStore(s => s.languages);
   const activeLanguage = useSettingsStore(s => s.activeLanguage);
   const setActiveLanguage = useSettingsStore(s => s.setActiveLanguage);
+  const addLanguage = useSettingsStore(s => s.addLanguage);
+  const renameLanguage = useSettingsStore(s => s.renameLanguage);
+  const removeLanguage = useSettingsStore(s => s.removeLanguage);
   const statuses = useDictionaryStore(s => s.statuses);
   const download = useDictionaryStore(s => s.download);
   const remove = useDictionaryStore(s => s.remove);
+  const form = useFormSheet();
+  const openForm = form.open;
+  const menu = useActionMenu();
+
+  const openCreate = useCallback(
+    () =>
+      openForm(
+        nameForm({
+          title: 'New language',
+          placeholder: 'Language name, e.g. French',
+          onSubmit: async name => {
+            const language = await addLanguage(name);
+            setActiveLanguage(language.code);
+          },
+        }),
+      ),
+    [openForm, addLanguage, setActiveLanguage],
+  );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <IconButton
+          icon={Plus}
+          accessibilityLabel="Add language"
+          onPress={openCreate}
+        />
+      ),
+    });
+  }, [navigation, openCreate]);
+
+  const onLongPress = (language: Language) => {
+    if (!language.custom) {
+      return;
+    }
+    menu.open({
+      title: language.name,
+      items: [
+        {
+          label: 'Rename',
+          onPress: () =>
+            openForm(
+              nameForm({
+                title: 'Rename language',
+                placeholder: 'Language name',
+                initialValue: language.name,
+                onSubmit: name => renameLanguage(language.code, name),
+              }),
+            ),
+        },
+        {
+          label: 'Delete',
+          destructive: true,
+          onPress: async () =>
+            confirmDelete(
+              language.name,
+              deleteWarning(await countLanguageContent(language.code)),
+              () => removeLanguage(language.code),
+            ),
+        },
+      ],
+    });
+  };
 
   const dictionaryButton = (language: Language) => {
     const status = statuses[language.code];
@@ -84,33 +177,39 @@ export function LanguagesScreen() {
   };
 
   return (
-    <FlatList
-      data={BUNDLED_LANGUAGES}
-      keyExtractor={item => item.code}
-      renderItem={({ item }) => (
-        <ListRow
-          title={item.name}
-          subtitle={dictionarySubtitle(item, statuses[item.code])}
-          onPress={() => setActiveLanguage(item.code)}
-          right={
-            <View style={styles.right}>
-              {dictionaryButton(item)}
-              {item.code === activeLanguage ? (
-                <Check color={colors.primary} size={22} />
-              ) : (
-                <View style={styles.checkPlaceholder} />
-              )}
-            </View>
-          }
-        />
-      )}
-      ListFooterComponent={
-        <Text style={[styles.footer, { color: colors.textSecondary }]}>
-          Tap a language to switch to it. Dictionaries add suggestions with word
-          forms and translations when you add words.
-        </Text>
-      }
-    />
+    <>
+      <FlatList
+        data={languages}
+        keyExtractor={item => item.code}
+        renderItem={({ item }) => (
+          <ListRow
+            title={item.name}
+            subtitle={dictionarySubtitle(item, statuses[item.code])}
+            onPress={() => setActiveLanguage(item.code)}
+            onLongPress={item.custom ? () => onLongPress(item) : undefined}
+            right={
+              <View style={styles.right}>
+                {dictionaryButton(item)}
+                {item.code === activeLanguage ? (
+                  <Check color={colors.primary} size={22} />
+                ) : (
+                  <View style={styles.checkPlaceholder} />
+                )}
+              </View>
+            }
+          />
+        )}
+        ListFooterComponent={
+          <Text style={[styles.footer, { color: colors.textSecondary }]}>
+            Tap a language to switch to it. Dictionaries add suggestions with
+            word forms and translations when you add words. Tap + to add another
+            language without a dictionary; long-press it to rename or delete it.
+          </Text>
+        }
+      />
+      {menu.element}
+      {form.element}
+    </>
   );
 }
 

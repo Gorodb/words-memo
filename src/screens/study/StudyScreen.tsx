@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import {
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -19,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { EmptyState } from '../../components/EmptyState';
 import { TextButton } from '../../components/TextButton';
-import { getWords } from '../../db/repositories/words';
+import { getWords, setLearned } from '../../db/repositories/words';
 import type { Word } from '../../domain/types';
 import { useQuery } from '../../db/useQuery';
 import { studyMode } from '../../features/study/modes';
@@ -31,6 +32,7 @@ import {
   type SessionAction,
   type SessionState,
   type StudyCard,
+  type WriteStatus,
 } from '../../features/study/session';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import { useKeyboardHeight } from '../../utils/useKeyboardHeight';
@@ -39,9 +41,14 @@ import type { RootStackParamList } from '../../navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Study'>;
 
 const CORRECT = '#2E9E5B';
+/** Correct, but with a Hint: dark yellow. */
+const ASSISTED = '#B8860B';
 const HIDE_ACTION_WIDTH = 96;
 
-/** One study session over the given words; nothing here changes the database. */
+/**
+ * One study session over the given words. Only "Learned" (write modes) changes
+ * the database; everything else lives in the session.
+ */
 export function StudyScreen({ navigation, route }: Props) {
   const { wordIds, modeId } = route.params;
   const mode = studyMode(modeId);
@@ -252,6 +259,11 @@ function RevealCard({
   );
 }
 
+/**
+ * Type the answer and Check. Wrong: the answer shows below, with "Mark as
+ * correct" and "Try again". Correct: Hide / Learned. Correct after a Hint
+ * (dark yellow): only "Try again".
+ */
 function WriteCard({
   card,
   status,
@@ -262,7 +274,7 @@ function WriteCard({
   onFocus,
 }: {
   card: StudyCard;
-  status: 'idle' | 'correct' | 'wrong' | 'shown';
+  status: WriteStatus;
   hints: number;
   revision: number;
   attempt: number;
@@ -282,16 +294,33 @@ function WriteCard({
   /** Holding Hint shows the answer over the input; releasing restores it. */
   const [peeking, setPeeking] = useState(false);
 
-  const borderColor =
+  const markLearned = () => {
+    if (!card.learned) {
+      setLearned(card.id, true).catch(e =>
+        Alert.alert(
+          'Could not save the word',
+          e instanceof Error ? e.message : String(e),
+        ),
+      );
+    }
+    dispatch({ type: 'hide', id: card.id });
+  };
+
+  const statusColor =
     status === 'correct'
       ? CORRECT
-      : status === 'wrong' || status === 'shown'
+      : status === 'assisted'
+      ? ASSISTED
+      : status === 'wrong'
       ? colors.danger
       : colors.border;
 
   return (
     <View
-      style={[styles.card, { backgroundColor: colors.surface, borderColor }]}
+      style={[
+        styles.card,
+        { backgroundColor: colors.surface, borderColor: statusColor },
+      ]}
     >
       <Text style={[styles.prompt, { color: colors.text }]}>{card.prompt}</Text>
       {status === 'idle' ? (
@@ -315,7 +344,7 @@ function WriteCard({
               styles.input,
               {
                 color: colors.text,
-                borderColor,
+                borderColor: statusColor,
                 backgroundColor: colors.background,
               },
             ]}
@@ -345,21 +374,16 @@ function WriteCard({
         <View
           style={[
             styles.input,
-            { borderColor, backgroundColor: colors.background },
+            { borderColor: statusColor, backgroundColor: colors.background },
           ]}
         >
-          <Text
-            style={[
-              styles.peekText,
-              { color: status === 'correct' ? CORRECT : colors.danger },
-            ]}
-          >
-            {status === 'correct' ? card.answer : typed.current || '—'}
+          <Text style={[styles.peekText, { color: statusColor }]}>
+            {status === 'wrong' ? typed.current || '—' : card.answer}
           </Text>
         </View>
       )}
-      {status === 'shown' ? (
-        <Text style={[styles.shownAnswer, { color: colors.danger }]}>
+      {status === 'wrong' ? (
+        <Text style={[styles.rightAnswer, { color: CORRECT }]}>
           {card.answer}
         </Text>
       ) : null}
@@ -372,38 +396,37 @@ function WriteCard({
               onPress={() =>
                 dispatch({ type: 'hint', id: card.id, input: typed.current })
               }
-              onLongPress={() => setPeeking(true)}
+              onLongPress={() => {
+                setPeeking(true);
+                dispatch({ type: 'peek', id: card.id });
+              }}
               onPressOut={() => setPeeking(false)}
             />
             <TextButton title="Check" onPress={check} />
           </>
         ) : null}
         {status === 'wrong' ? (
+          <TextButton
+            title="Mark as correct"
+            variant="secondary"
+            onPress={() => dispatch({ type: 'markCorrect', id: card.id })}
+          />
+        ) : null}
+        {status === 'correct' ? (
           <>
             <TextButton
-              title="Show"
+              title="Hide"
               variant="secondary"
-              onPress={() => dispatch({ type: 'show', id: card.id })}
+              onPress={() => dispatch({ type: 'hide', id: card.id })}
             />
-            <TextButton
-              title="Mark as correct"
-              variant="secondary"
-              onPress={() => dispatch({ type: 'markCorrect', id: card.id })}
-            />
-            <TextButton
-              title="Try again"
-              onPress={() => dispatch({ type: 'retry', id: card.id })}
-            />
+            <TextButton title="Learned" onPress={markLearned} />
           </>
         ) : null}
-        {status === 'shown' ? (
+        {status === 'wrong' || status === 'assisted' ? (
           <TextButton
             title="Try again"
             onPress={() => dispatch({ type: 'retry', id: card.id })}
           />
-        ) : null}
-        {status === 'correct' ? (
-          <Text style={[styles.correct, { color: CORRECT }]}>Correct</Text>
         ) : null}
       </View>
     </View>
@@ -462,18 +485,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   peekText: { fontSize: 16 },
-  shownAnswer: { fontSize: 16, fontWeight: '500' },
+  rightAnswer: { fontSize: 16, fontWeight: '600', paddingHorizontal: 12 },
   buttons: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
     flexWrap: 'wrap',
     marginRight: -12,
-  },
-  correct: {
-    fontSize: 15,
-    fontWeight: '600',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
 });

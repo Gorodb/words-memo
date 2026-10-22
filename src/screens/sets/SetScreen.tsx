@@ -24,7 +24,7 @@ import { LabeledDivider } from '../../components/LabeledDivider';
 import { TextButton } from '../../components/TextButton';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { nameForm, wordForm } from '../../components/formSheet/forms';
-import { BUNDLED_LANGUAGES, DICTIONARIES } from '../../config/languages';
+import { DICTIONARIES } from '../../config/languages';
 import { getSet, renameSet, setSetPinned } from '../../db/repositories/sets';
 import { pinLabel, togglePinned } from '../../components/itemActions';
 import {
@@ -39,6 +39,7 @@ import { useQuery } from '../../db/useQuery';
 import type { ID, Word } from '../../domain/types';
 import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
+import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
 import { plural } from '../../utils/plural';
@@ -98,9 +99,10 @@ export function SetScreen({ navigation, route }: Props) {
     ].filter(s => s.data.length > 0);
   }, [words]);
 
+  const languages = useSettingsStore(s => s.languages);
   const languageName = useMemo(
-    () => BUNDLED_LANGUAGES.find(l => l.code === set?.languageCode)?.name,
-    [set?.languageCode],
+    () => languages.find(l => l.code === set?.languageCode)?.name,
+    [languages, set?.languageCode],
   );
 
   const openWordForm = useCallback(
