@@ -51,7 +51,7 @@ export async function deleteLanguage(code: LanguageCode): Promise<void> {
     await tx.execute('DELETE FROM folders WHERE language_code = ?', [code]);
     await tx.execute('DELETE FROM languages WHERE code = ?', [code]);
   });
-  notifyChanged('folders', 'sets', 'folder_sets', 'words');
+  notifyChanged('folders', 'sets', 'folder_sets', 'words', 'rules');
 }
 
 /** Number of sets and words of a language, for the delete confirmation. */

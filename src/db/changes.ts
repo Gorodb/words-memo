@@ -2,7 +2,7 @@
  * Minimal change feed: repositories call notifyChanged() after writes,
  * useQuery() re-runs queries that depend on the touched tables.
  */
-export type Table = 'folders' | 'sets' | 'folder_sets' | 'words';
+export type Table = 'folders' | 'sets' | 'folder_sets' | 'words' | 'rules';
 
 type Listener = (tables: Table[]) => void;
 

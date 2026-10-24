@@ -26,11 +26,13 @@ import { CircleMinus } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import { useKeyboardHeight } from '../../utils/useKeyboardHeight';
 import { IconButton } from '../IconButton';
+import { SegmentedControl } from '../SegmentedControl';
 import { TextButton } from '../TextButton';
 import {
   buildResult,
   canSubmit,
   initialValues,
+  initiallyRevealed,
   type ExampleItem,
   type FormExamplesConfig,
   type FormField,
@@ -47,8 +49,24 @@ export interface FormSheetOptions {
   onSubmit: (result: FormResult) => void | Promise<void>;
 }
 
+export interface FormSheetVariant {
+  /** Segment label, e.g. "Word". */
+  label: string;
+  options: FormSheetOptions;
+}
+
+/**
+ * Several forms in one sheet, switched with a segmented control under the
+ * title (e.g. a new word or a new rule). Switching starts the other form empty.
+ */
+export interface FormSheetChoice {
+  variants: FormSheetVariant[];
+  /** Index of the variant shown first (default 0). */
+  initial?: number;
+}
+
 export interface FormSheetHandle {
-  open: (options: FormSheetOptions) => void;
+  open: (options: FormSheetOptions | FormSheetChoice) => void;
 }
 
 /** Space kept free above the sheet when it's at full height. */
@@ -88,6 +106,10 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
   const exampleSeeds = useRef<Record<number, ExampleItem>>({});
 
   const [options, setOptions] = useState<FormSheetOptions | null>(null);
+  const [variants, setVariants] = useState<FormSheetVariant[] | null>(null);
+  const [variantIndex, setVariantIndex] = useState(0);
+  /** Keys of the "+ Add …" fields that are shown. */
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const [values, setValues] = useState<Record<string, string>>({});
   /** Initial text of each field input; replaced only when set from code. */
   const [seeds, setSeeds] = useState<Record<string, string>>({});
@@ -111,27 +133,64 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     return item;
   };
 
+  /** Shows a form with fresh inputs. */
+  const load = (next: FormSheetOptions) => {
+    const start = initialValues(next.fields);
+    exampleSeeds.current = {};
+    setOptions(next);
+    setValues(start);
+    setSeeds(start);
+    setRevisions({});
+    setRevealed(new Set(initiallyRevealed(next.fields)));
+    setExamples(
+      (next.examples?.initial ?? []).map(e =>
+        newExample(e.text, e.translation),
+      ),
+    );
+    setBusy(false);
+    setFocusedKey(null);
+    setSuggestions(null);
+    setFormKey(k => k + 1);
+  };
+
   useImperativeHandle(ref, () => ({
     open: next => {
-      const start = initialValues(next.fields);
-      exampleSeeds.current = {};
-      setOptions(next);
-      setValues(start);
-      setSeeds(start);
-      setRevisions({});
-      setExamples(
-        (next.examples?.initial ?? []).map(e =>
-          newExample(e.text, e.translation),
-        ),
-      );
-      setBusy(false);
-      setFocusedKey(null);
-      setSuggestions(null);
-      setFormKey(k => k + 1);
+      if ('variants' in next) {
+        const index = next.initial ?? 0;
+        setVariants(next.variants);
+        setVariantIndex(index);
+        load(next.variants[index].options);
+      } else {
+        setVariants(null);
+        load(next);
+      }
       focusedSinceOpen.current = false;
       sheetRef.current?.present();
     },
   }));
+
+  const switchVariant = (index: number) => {
+    if (!variants) {
+      return;
+    }
+    const next = variants[index].options;
+    setVariantIndex(index);
+    load(next);
+    // The sheet is already open, so the new first field can take the focus.
+    const first = next.fields[0]?.key;
+    if (first) {
+      setTimeout(() => inputRefs.current[first]?.focus(), 100);
+    }
+  };
+
+  const reveal = (key: string) => {
+    setRevealed(prev => new Set(prev).add(key));
+    // Revealed fields come last: scroll to them, then focus.
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+      inputRefs.current[key]?.focus();
+    }, 100);
+  };
 
   // Suggestions for the focused field: on focus and while typing (debounced).
   const focusedField = fields.find(f => f.key === focusedKey);
@@ -270,8 +329,21 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
           {options?.title}
         </Text>
 
+        {variants ? (
+          <View style={styles.variants}>
+            <SegmentedControl
+              labels={variants.map(v => v.label)}
+              selectedIndex={variantIndex}
+              onChange={switchVariant}
+            />
+          </View>
+        ) : null}
+
         <View key={formKey}>
           {fields.map(field => {
+            if (field.addLabel) {
+              return null; // rendered after the examples
+            }
             const dropdown =
               suggestions?.fieldKey === field.key &&
               focusedKey === field.key &&
@@ -281,9 +353,7 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
             return (
               <View key={field.key} style={styles.field}>
                 {field.label ? (
-                  <Text
-                    style={[styles.label, { color: colors.textSecondary }]}
-                  >
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>
                     {field.label}
                     {field.required ? ' *' : ''}
                   </Text>
@@ -302,13 +372,17 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
                   }
                   placeholder={field.placeholder}
                   placeholderTextColor={colors.textSecondary}
-                  multiline={field.multiline}
+                  multiline={field.multiline || field.textArea}
                   ref={(node: unknown) => {
                     inputRefs.current[field.key] =
                       (node as Focusable | null) ?? null;
                   }}
                   accessibilityLabel={field.label ?? field.placeholder}
-                  style={[inputStyle, field.multiline && styles.multiline]}
+                  style={[
+                    inputStyle,
+                    (field.multiline || field.textArea) && styles.multiline,
+                    field.textArea && styles.textArea,
+                  ]}
                 />
                 {dropdown ? (
                   <View
@@ -335,7 +409,12 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
                           pressed && styles.pressed,
                         ]}
                       >
-                        <Text style={[styles.suggestionTitle, { color: colors.text }]}>
+                        <Text
+                          style={[
+                            styles.suggestionTitle,
+                            { color: colors.text },
+                          ]}
+                        >
                           {item.title}
                         </Text>
                         {item.subtitle ? (
@@ -412,11 +491,53 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
                   </View>
                 );
               })}
-              <View style={styles.addExample}>
-                <TextButton title="+ Add example" onPress={addExample} />
-              </View>
             </>
           ) : null}
+
+          {fields
+            .filter(field => field.addLabel && revealed.has(field.key))
+            .map(field => (
+              <View key={field.key} style={styles.field}>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                  {field.label ?? field.addLabel}
+                </Text>
+                <BottomSheetTextInput
+                  defaultValue={seeds[field.key]}
+                  onChangeText={text =>
+                    setValues(prev => ({ ...prev, [field.key]: text }))
+                  }
+                  placeholder={field.placeholder}
+                  placeholderTextColor={colors.textSecondary}
+                  multiline
+                  ref={(node: unknown) => {
+                    inputRefs.current[field.key] =
+                      (node as Focusable | null) ?? null;
+                  }}
+                  accessibilityLabel={field.label ?? field.addLabel}
+                  style={[inputStyle, styles.multiline, styles.long]}
+                />
+                {field.hint ? (
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                    {field.hint}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+
+          <View style={styles.addButtons}>
+            {options?.examples ? (
+              <TextButton title="+ Add example" onPress={addExample} />
+            ) : null}
+            {fields
+              .filter(field => field.addLabel && !revealed.has(field.key))
+              .map(field => (
+                <TextButton
+                  key={field.key}
+                  title={`+ ${field.addLabel}`}
+                  onPress={() => reveal(field.key)}
+                />
+              ))}
+          </View>
         </View>
 
         <View style={styles.actions}>
@@ -436,7 +557,7 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
 export function useFormSheet() {
   const ref = useRef<FormSheetHandle>(null);
   const open = useCallback(
-    (options: FormSheetOptions) => ref.current?.open(options),
+    (options: FormSheetOptions | FormSheetChoice) => ref.current?.open(options),
     [],
   );
   return { open, element: <FormSheet ref={ref} /> };
@@ -456,6 +577,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   multiline: { minHeight: 44, textAlignVertical: 'top' },
+  long: { minHeight: 120 },
+  textArea: { minHeight: 220 },
+  variants: { marginBottom: 16 },
   dropdown: {
     marginTop: 4,
     borderWidth: StyleSheet.hairlineWidth,
@@ -473,7 +597,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   examplePair: { flex: 1, gap: 6 },
-  addExample: { alignItems: 'flex-start', marginLeft: -12 },
+  addButtons: { flexDirection: 'row', flexWrap: 'wrap', marginLeft: -12 },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

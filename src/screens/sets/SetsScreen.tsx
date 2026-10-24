@@ -25,7 +25,7 @@ import {
 } from '../../db/repositories/sets';
 import { useQuery } from '../../db/useQuery';
 import { useActiveLanguage } from '../../store/useActiveLanguage';
-import { plural } from '../../utils/plural';
+import { setContents } from '../../utils/plural';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 
 /** All sets of the active language, whether in folders or not. Pinned sets first. */
@@ -94,10 +94,9 @@ export function SetsScreen() {
           onPress: () =>
             confirmDelete(
               set.name,
-              set.wordCount > 0
-                ? `${plural(
-                    set.wordCount,
-                    'word',
+              set.wordCount > 0 || set.ruleCount > 0
+                ? `${setContents(
+                    set,
                   )} will be deleted, and the set will be removed from all folders.`
                 : 'The set will be removed from all folders.',
               () => deleteSet(set.id),
@@ -116,7 +115,7 @@ export function SetsScreen() {
           <ListRow
             variant="card"
             title={item.name}
-            subtitle={plural(item.wordCount, 'word')}
+            subtitle={setContents(item)}
             pinned={item.pinnedAt !== null}
             chevron
             onPress={() =>

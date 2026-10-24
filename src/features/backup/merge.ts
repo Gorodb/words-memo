@@ -4,8 +4,10 @@
  * - never deletes anything;
  * - sets and folders are matched by name (per language) or created;
  * - a word matching an existing word by (language, term_norm) fully replaces
- *   translation and examples on EVERY matching word, which stay in their sets;
+ *   translation, examples and description on EVERY matching word, which stay
+ *   in their sets;
  * - other words are added to their set from the backup;
+ * - rules are added to their set unless it already has one with the same text;
  * - a custom language (it has a name in the file) is matched by code, then
  *   by name among the custom languages, or created.
  */
@@ -25,6 +27,8 @@ export interface ExistingLanguage {
   folders: Array<{ id: ID; name: string; setIds: ID[] }>;
   /** Existing word ids by term_norm. */
   wordIdsByTerm: Map<string, ID[]>;
+  /** Texts of the existing rules, by set id. */
+  ruleTextsBySet: Map<ID, string[]>;
 }
 
 export interface ImportPlan {
@@ -44,7 +48,12 @@ export interface ImportPlan {
     updatedAt: Timestamp;
   }>;
   addToFolder: Array<{ folderId: ID; setId: ID }>;
-  updateWords: Array<{ id: ID; translation: string; examples: Example[] }>;
+  updateWords: Array<{
+    id: ID;
+    translation: string;
+    examples: Example[];
+    description: string;
+  }>;
   insertWords: Array<{
     id: ID;
     setId: ID;
@@ -53,7 +62,17 @@ export interface ImportPlan {
     termNorm: string;
     translation: string;
     examples: Example[];
+    description: string;
     learnedAt: Timestamp | null;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+  }>;
+  insertRules: Array<{
+    id: ID;
+    setId: ID;
+    languageCode: LanguageCode;
+    title: string;
+    text: string;
     createdAt: Timestamp;
     updatedAt: Timestamp;
   }>;
@@ -63,6 +82,7 @@ export interface ImportPlan {
 export interface ImportSummary {
   wordsAdded: number;
   wordsUpdated: number;
+  rulesAdded: number;
   setsCreated: number;
   foldersCreated: number;
   /** Names of the custom languages that will be created. */
@@ -84,9 +104,11 @@ export function planImport(
     addToFolder: [],
     updateWords: [],
     insertWords: [],
+    insertRules: [],
     summary: {
       wordsAdded: 0,
       wordsUpdated: 0,
+      rulesAdded: 0,
       setsCreated: 0,
       foldersCreated: 0,
       languagesCreated: [],
@@ -169,6 +191,7 @@ export function planImport(
               id,
               translation: word.translation,
               examples: word.examples,
+              description: word.description,
             };
             if (at >= 0) {
               plan.updateWords[at] = update;
@@ -186,11 +209,30 @@ export function planImport(
             termNorm,
             translation: word.translation,
             examples: word.examples,
+            description: word.description,
             learnedAt: word.learnedAt,
             createdAt: word.createdAt,
             updatedAt: word.updatedAt,
           });
         }
+      }
+      // Same text in the same set = the same rule (also within the file).
+      const texts = current.ruleTextsBySet.get(setId) ?? [];
+      current.ruleTextsBySet.set(setId, texts);
+      for (const rule of set.rules) {
+        if (texts.includes(rule.text)) {
+          continue;
+        }
+        texts.push(rule.text);
+        plan.insertRules.push({
+          id: createId(),
+          setId,
+          languageCode: language.code,
+          title: rule.title,
+          text: rule.text,
+          createdAt: rule.createdAt,
+          updatedAt: rule.updatedAt,
+        });
       }
     }
 
@@ -221,6 +263,7 @@ export function planImport(
 
   plan.summary.wordsAdded = plan.insertWords.length;
   plan.summary.wordsUpdated = updatedIds.size;
+  plan.summary.rulesAdded = plan.insertRules.length;
   return plan;
 }
 
@@ -232,6 +275,13 @@ export function describeSummary(summary: ImportSummary): string {
     } added`,
     `${summary.wordsUpdated} updated`,
   ];
+  if (summary.rulesAdded) {
+    parts.push(
+      `${summary.rulesAdded} ${
+        summary.rulesAdded === 1 ? 'rule' : 'rules'
+      } added`,
+    );
+  }
   if (summary.setsCreated) {
     parts.push(
       `${summary.setsCreated} new ${

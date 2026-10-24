@@ -31,8 +31,16 @@ export interface FormField {
   /** Save stays disabled until this field has non-blank text. */
   required?: boolean;
   multiline?: boolean;
+  /** A large text area for long text (implies multiline), e.g. a rule. */
+  textArea?: boolean;
   /** Small muted text below the input. */
   hint?: string;
+  /**
+   * Optional extra: the field stays hidden behind a "+ <addLabel>" button
+   * (next to "+ Add example") until tapped, or until it has an initial value.
+   * Hidden fields are shown after the examples.
+   */
+  addLabel?: string;
   /** Dropdown with suggestions below the input while it's focused. */
   suggestions?: FormFieldSuggestions;
 }
@@ -56,6 +64,13 @@ export interface ExampleItem extends Example {
 
 export function initialValues(fields: FormField[]): Record<string, string> {
   return Object.fromEntries(fields.map(f => [f.key, f.initialValue ?? '']));
+}
+
+/** Keys of the "+ Add …" fields that start open because they have a value. */
+export function initiallyRevealed(fields: FormField[]): string[] {
+  return fields
+    .filter(f => f.addLabel && (f.initialValue ?? '').trim() !== '')
+    .map(f => f.key);
 }
 
 export function canSubmit(

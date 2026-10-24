@@ -7,10 +7,11 @@ Offline React Native app (no backend, no login) for learning English and German 
 ```
 Language (en, de, custom)
  ├─ WordSet           (belongs to the language; exists on its own)
- │   └─ Word
+ │   ├─ Word
+ │   └─ Rule          title + Markdown text; only read, never studied
  └─ Folder            (manual drag-and-drop order; contains any number of sets)
      ┄ sets           (many-to-many; removing a folder keeps its sets)
-         └─ Word      term · translation · examples[{text, translation}] · learned
+         └─ Word      term · translation · examples[{text, translation}] · description (Markdown) · learned
 ```
 
 - The **active language** is a global setting. The Folders and Sets tabs only show data for it.
@@ -28,7 +29,7 @@ RootStack
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
 │  ├─ LanguagesTab     en / de + custom ✓ active, dictionary Download / Remove; [+] new language; long-press custom → Rename / Delete
 │  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
-├─ Set                 Learn / Flashcards / Study words tiles, "To learn" / "Learned" word lists; [+] word sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
+├─ Set                 Words / Rules tabs (only when the set has rules); Learn / Flashcards / Study words tiles, "To learn" / "Learned" word lists; [+] word or rule sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
 ├─ Study               one session in one study mode (opens on top of the tabs)
 ├─ Flashcards          full-screen modal: [×] counter [shuffle]; swipe cards of the words to learn
 └─ StudyWords          [×] "Round N of 3"; choose / choose / write game over 10 words, then results
@@ -52,6 +53,7 @@ src/
   features/dictionary/        search keys, lookup queries, download/install store
   features/study/             study modes registry and session reducer (pure + unit tests)
   features/backup/            backup format, import planner (pure + unit tests), save/share/pick
+  features/markdown/          small Markdown parser (pure + unit tests); components/Markdown.tsx renders it
 scripts/dictionary/           Wiktionary → SQLite dictionary build (dict:fetch, dict:build)
 ```
 
@@ -76,8 +78,10 @@ sets     (id TEXT PK, language_code, name, created_at, updated_at)
 folder_sets (folder_id → folders CASCADE, set_id → sets CASCADE, added_at, PK(folder_id, set_id))
 words    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code,
           term, term_norm, translation, examples_json ([{text, translation}]),
+          description (Markdown, '' = none),
           learned_at (NULL = to learn), sort_at (list order), created_at, updated_at)
           INDEX (language_code, term_norm)          -- used by import merge
+rules    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code, title ('' for rules made before v8), text (Markdown), created_at, updated_at)
 settings (key PK, value)
 languages (code TEXT PK 'x-<id>', name, created_at)   -- custom languages only; bundled ones are in config
 ```
@@ -97,8 +101,9 @@ Words are **not unique**: the same term can be in several sets of one language.
 - **Share set** (the set's ⋯ menu) sends a `kind: 'sets'` file. The other person imports it with Settings → Import.
 - **Import** (merge, never deletes). Before writing anything, the app shows a preview ("X added, Y updated, …") and asks for confirmation:
   1. Sets and folders are matched by name per language, or created. Sets listed for a folder are added to it.
-  2. A word matching by exact `(language_code, term_norm)` fully replaces translation and examples on **every** matching word. Each one keeps its set and its learned state.
+  2. A word matching by exact `(language_code, term_norm)` fully replaces translation, examples and description on **every** matching word. Each one keeps its set and its learned state.
   3. Other words are added to their set from the file, with their learned state.
+  3a. Rules are added to their set unless that set already has a rule with exactly the same text. Files from older versions have no descriptions or rules; both are optional in the format (still `version: 1`).
   4. Custom languages are exported with their `name`. On import they match by code, then by name among custom languages, or are created. Unknown languages without a name are skipped and reported.
   5. Everything runs in one transaction.
 - **Code**:
@@ -177,6 +182,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 8. ✅ **Set tiles + flashcards**: Learn / Flashcards tiles on the Set screen, flashcards game, Reset progress.
 9. ✅ **Custom languages**: add / rename / delete languages without a dictionary; backups carry them.
 10. ✅ **Study words**: three-round game with learned marking and Continue learning.
+11. ✅ **Descriptions and rules**: Markdown description per word ("+ Add description" in the word sheet, "Description" link on the row opens a read-only sheet); rules in sets (Word | Rule switch in the new-entry sheet, Words / Rules tabs on the Set screen); both in backups.
 
 ## Decisions
 
@@ -193,4 +199,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 - Sets are independent of folders. A folder contains sets (a set can be in several folders), and removing a folder keeps its sets. Sets created from inside a folder are added to it.
 - Folders are sorted manually with drag and drop. New folders go to the end.
 - Up to 5 folders and 5 sets per language can be pinned to the top of their lists. Use the "⋯" menu on a folder or set screen, or long-press a set.
+- **Descriptions and rules** use Markdown, rendered by our own small parser (`features/markdown/markdown.ts`): headings, bold / italic / strike, inline and fenced code, lists (nested), quotes, horizontal rules, pipe tables, links (http/mailto only). A single line break stays a line break. No Markdown library: none was installed, and a pure parser is easy to test and has no React / RN version risk.
+- A word's description is **not** shown with the examples: the row has a "Description" link that opens it in a read-only bottom sheet. It isn't used in study modes.
+- **Rules** belong to a set and have a required title and Markdown text. The Rules tab lists only titles with a "More…" link; tapping the card or More… opens the whole rule in the read-only sheet, which has a Close button pinned at the bottom (word descriptions use the same sheet). Rules from before titles existed show their first line instead (`ruleTitle()`). They are never studied or offered as options (separate `rules` table, so word queries can't pick them up). They are listed oldest first and edited / deleted with swipe-left like words (delete asks for confirmation). The Words / Rules tabs show only while the set has rules; a set with only rules opens on Rules. A new entry opens as a rule when + is tapped on the Rules tab.
 - App icon: fanned flashcards with a teal "learned" check on an indigo → violet gradient. The splash screen shows the same mark on #6A5DF0.

@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, SectionList, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, SectionList, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,12 +22,25 @@ import { useActionMenu } from '../../components/ActionMenuSheet';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { LabeledDivider } from '../../components/LabeledDivider';
+import { useMarkdownSheet } from '../../components/MarkdownSheet';
+import { SegmentedControl } from '../../components/SegmentedControl';
 import { TextButton } from '../../components/TextButton';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
-import { nameForm, wordForm } from '../../components/formSheet/forms';
+import {
+  nameForm,
+  ruleForm,
+  wordForm,
+  wordOrRuleForm,
+} from '../../components/formSheet/forms';
 import { DICTIONARIES } from '../../config/languages';
 import { getSet, renameSet, setSetPinned } from '../../db/repositories/sets';
 import { pinLabel, togglePinned } from '../../components/itemActions';
+import {
+  createRule,
+  deleteRule,
+  listRules,
+  updateRule,
+} from '../../db/repositories/rules';
 import {
   createWord,
   deleteWord,
@@ -37,7 +50,8 @@ import {
   updateWord,
 } from '../../db/repositories/words';
 import { useQuery } from '../../db/useQuery';
-import type { ID, Word } from '../../domain/types';
+import { ruleTitle } from '../../domain/rules';
+import type { ID, Rule, Word } from '../../domain/types';
 import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
 import { STUDY_WORDS_COUNT } from '../../features/study/studyWords';
@@ -45,6 +59,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
 import { plural } from '../../utils/plural';
+import { RuleCard } from './RuleCard';
 import { WordRow } from './WordRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Set'>;
@@ -55,9 +70,12 @@ interface Section {
   data: Word[];
 }
 
+type Tab = 'words' | 'rules';
+
 /**
  * Words of one set: Learn / Flashcards / Study words tiles, then "To learn" and "Learned".
- * Header: + (add word) and ⋯ (Edit set / Select words / Study … / Reset).
+ * When the set has rules, Words / Rules tabs on top; rules are only read (never studied).
+ * Header: + (add word or rule) and ⋯ (Edit set / Select words / Study … / Reset).
  */
 export function SetScreen({ navigation, route }: Props) {
   const { setId } = route.params;
@@ -67,16 +85,34 @@ export function SetScreen({ navigation, route }: Props) {
   const openForm = form.open;
   const menu = useActionMenu();
   const openMenu = menu.open;
+  const reader = useMarkdownSheet();
 
   const loadSet = useCallback(() => getSet(setId), [setId]);
   const { data: set } = useQuery(loadSet, ['sets']);
   const loadWords = useCallback(() => listWords(setId), [setId]);
   const { data: words } = useQuery(loadWords, ['words']);
+  const loadRules = useCallback(() => listRules(setId), [setId]);
+  const { data: rules } = useQuery(loadRules, ['rules']);
 
   const [expanded, setExpanded] = useState<ReadonlySet<ID>>(new Set());
   /** null = normal mode; a set of ids = "Select words" mode. */
   const [selected, setSelected] = useState<ReadonlySet<ID> | null>(null);
   const openSwipe = useRef<SwipeableMethods | null>(null);
+  const [tab, setTab] = useState<Tab>('words');
+  // Tabs only exist while the set has rules; selecting words needs the Words tab.
+  const hasRules = (rules?.length ?? 0) > 0;
+  const activeTab: Tab = hasRules && !selected ? tab : 'words';
+
+  // A set with rules but no words opens on the Rules tab.
+  const tabInitialized = useRef(false);
+  useEffect(() => {
+    if (!tabInitialized.current && words && rules) {
+      tabInitialized.current = true;
+      if (words.length === 0 && rules.length > 0) {
+        setTab('rules');
+      }
+    }
+  }, [words, rules]);
 
   useEffect(() => {
     if (set === null) {
@@ -112,27 +148,69 @@ export function SetScreen({ navigation, route }: Props) {
       if (!set) {
         return;
       }
+      const options = wordForm({
+        title: word ? 'Edit word' : 'New word',
+        languageCode: set.languageCode,
+        dictionaryHint: DICTIONARIES[set.languageCode]
+          ? `Download the ${
+              languageName ?? ''
+            } dictionary on the Languages tab to get suggestions.`
+          : undefined,
+        initial: word,
+        onSubmit: async input => {
+          if (word) {
+            await updateWord(word.id, input);
+          } else {
+            await createWord(setId, input);
+            setTab('words');
+          }
+        },
+      });
+      if (word) {
+        openForm(options);
+        return;
+      }
+      // A new entry can be a word or a rule.
       openForm(
-        wordForm({
-          title: word ? 'Edit word' : 'New word',
-          languageCode: set.languageCode,
-          dictionaryHint: DICTIONARIES[set.languageCode]
-            ? `Download the ${
-                languageName ?? ''
-              } dictionary on the Languages tab to get suggestions.`
-            : undefined,
-          initial: word,
-          onSubmit: async input => {
-            if (word) {
-              await updateWord(word.id, input);
-            } else {
-              await createWord(setId, input);
-            }
-          },
+        wordOrRuleForm({
+          word: options,
+          rule: ruleForm({
+            title: 'New rule',
+            onSubmit: async input => {
+              await createRule(setId, input);
+              setTab('rules');
+            },
+          }),
+          ruleFirst: activeTab === 'rules',
         }),
       );
     },
-    [openForm, set, setId, languageName],
+    [openForm, set, setId, languageName, activeTab],
+  );
+
+  const openRuleForm = useCallback(
+    (rule: Rule) =>
+      openForm(
+        ruleForm({
+          title: 'Edit rule',
+          initial: rule,
+          onSubmit: input => updateRule(rule.id, input),
+        }),
+      ),
+    [openForm],
+  );
+
+  const confirmDeleteRule = useCallback(
+    (rule: Rule) =>
+      Alert.alert(`Delete "${ruleTitle(rule)}"?`, undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteRule(rule.id),
+        },
+      ]),
+    [],
   );
 
   const startStudy = useCallback(
@@ -261,7 +339,7 @@ export function SetScreen({ navigation, route }: Props) {
         },
         {
           label: 'Share set',
-          disabled: all.length === 0,
+          disabled: all.length === 0 && !hasRules,
           onPress: () =>
             shareSet(set.id, set.name).catch(e =>
               Alert.alert(
@@ -296,7 +374,15 @@ export function SetScreen({ navigation, route }: Props) {
         },
       ],
     });
-  }, [set, words, openMenu, openForm, startStudy, confirmResetLearned]);
+  }, [
+    set,
+    words,
+    hasRules,
+    openMenu,
+    openForm,
+    startStudy,
+    confirmResetLearned,
+  ]);
 
   const allSelected =
     !!selected && !!words && words.length > 0 && selected.size === words.length;
@@ -318,7 +404,7 @@ export function SetScreen({ navigation, route }: Props) {
           <View style={styles.headerButtons}>
             <IconButton
               icon={Plus}
-              accessibilityLabel="Add word"
+              accessibilityLabel="Add word or rule"
               onPress={() => openWordForm()}
             />
             <IconButton
@@ -363,91 +449,134 @@ export function SetScreen({ navigation, route }: Props) {
     .filter(w => selected?.has(w.id))
     .map(w => w.id);
 
+  const listPadding = {
+    // Edge-to-edge: keep the last item above the system navigation bar.
+    paddingBottom: LIST_END_SPACE + insets.bottom + (selected ? BAR_HEIGHT : 0),
+  };
+
   return (
     <>
-      <SectionList
-        sections={sections}
-        keyExtractor={item => item.id}
-        stickySectionHeadersEnabled={false}
-        contentContainerStyle={[
-          styles.grow,
-          // Edge-to-edge: keep the last word above the system navigation bar.
-          {
-            paddingBottom:
-              LIST_END_SPACE + insets.bottom + (selected ? BAR_HEIGHT : 0),
-          },
-        ]}
-        ListHeaderComponent={
-          words && words.length > 0 && !selected ? (
-            <View style={styles.header}>
-              <View style={styles.tiles}>
-                <ActionTile
-                  icon={GraduationCap}
-                  title="Learn"
-                  // The study modes plus "Study words".
-                  subtitle={`${STUDY_MODES.length + 1} study modes`}
-                  onPress={openLearn}
-                />
-                <ActionTile
-                  icon={GalleryHorizontalEnd}
-                  title="Flashcards"
-                  subtitle={
-                    toLearnCount > 0
-                      ? `${toLearnCount} to learn`
-                      : 'All learned'
-                  }
-                  onPress={openFlashcards}
-                />
-              </View>
-              <View style={styles.tiles}>
-                <ActionTile
-                  icon={ListChecks}
-                  title="Study words"
-                  subtitle={
-                    toLearnCount > 0
-                      ? `${Math.min(
-                          toLearnCount,
-                          STUDY_WORDS_COUNT,
-                        )} words · choose, then write`
-                      : 'All learned'
-                  }
-                  onPress={openStudyWords}
-                />
-              </View>
-            </View>
-          ) : undefined
-        }
-        renderSectionHeader={({ section }) => (
-          <LabeledDivider label={section.title} />
-        )}
-        renderItem={({ item }) => (
-          <WordRow
-            word={item}
-            expanded={expanded.has(item.id)}
-            onToggleExpanded={() => setExpanded(prev => toggle(prev, item.id))}
-            onEdit={() => openWordForm(item)}
-            onDelete={() => deleteWord(item.id)}
-            onToggleLearned={() => setLearned(item.id, item.learnedAt === null)}
-            onSwipeOpen={onSwipeOpen}
-            selection={
-              selected
-                ? {
-                    selected: selected.has(item.id),
-                    onToggle: () =>
-                      setSelected(prev =>
-                        prev ? toggle(prev, item.id) : prev,
-                      ),
-                  }
-                : undefined
-            }
+      {hasRules && !selected ? (
+        <View style={styles.tabs}>
+          <SegmentedControl
+            labels={[
+              `Words (${words?.length ?? 0})`,
+              `Rules (${rules?.length ?? 0})`,
+            ]}
+            selectedIndex={activeTab === 'words' ? 0 : 1}
+            onChange={index => {
+              openSwipe.current?.close();
+              setTab(index === 0 ? 'words' : 'rules');
+            }}
           />
-        )}
-        ListEmptyComponent={
-          words ? (
-            <EmptyState title="No words yet" hint="Tap + to add a word." />
-          ) : undefined
-        }
-      />
+        </View>
+      ) : null}
+      {activeTab === 'rules' ? (
+        <FlatList
+          data={rules ?? []}
+          keyExtractor={item => item.id}
+          contentContainerStyle={[styles.rules, listPadding]}
+          renderItem={({ item, index }) => (
+            <RuleCard
+              rule={item}
+              number={index + 1}
+              onOpen={() =>
+                reader.open({ title: ruleTitle(item), text: item.text })
+              }
+              onEdit={() => openRuleForm(item)}
+              onDelete={() => confirmDeleteRule(item)}
+              onSwipeOpen={onSwipeOpen}
+            />
+          )}
+        />
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={item => item.id}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={[styles.grow, listPadding]}
+          ListHeaderComponent={
+            words && words.length > 0 && !selected ? (
+              <View style={styles.header}>
+                <View style={styles.tiles}>
+                  <ActionTile
+                    icon={GraduationCap}
+                    title="Learn"
+                    // The study modes plus "Study words".
+                    subtitle={`${STUDY_MODES.length + 1} study modes`}
+                    onPress={openLearn}
+                  />
+                  <ActionTile
+                    icon={GalleryHorizontalEnd}
+                    title="Flashcards"
+                    subtitle={
+                      toLearnCount > 0
+                        ? `${toLearnCount} to learn`
+                        : 'All learned'
+                    }
+                    onPress={openFlashcards}
+                  />
+                </View>
+                <View style={styles.tiles}>
+                  <ActionTile
+                    icon={ListChecks}
+                    title="Study words"
+                    subtitle={
+                      toLearnCount > 0
+                        ? `${Math.min(
+                            toLearnCount,
+                            STUDY_WORDS_COUNT,
+                          )} words · choose, then write`
+                        : 'All learned'
+                    }
+                    onPress={openStudyWords}
+                  />
+                </View>
+              </View>
+            ) : undefined
+          }
+          renderSectionHeader={({ section }) => (
+            <LabeledDivider label={section.title} />
+          )}
+          renderItem={({ item }) => (
+            <WordRow
+              word={item}
+              expanded={expanded.has(item.id)}
+              onToggleExpanded={() =>
+                setExpanded(prev => toggle(prev, item.id))
+              }
+              onEdit={() => openWordForm(item)}
+              onDelete={() => deleteWord(item.id)}
+              onToggleLearned={() =>
+                setLearned(item.id, item.learnedAt === null)
+              }
+              onOpenDescription={() =>
+                reader.open({ title: item.term, text: item.description })
+              }
+              onSwipeOpen={onSwipeOpen}
+              selection={
+                selected
+                  ? {
+                      selected: selected.has(item.id),
+                      onToggle: () =>
+                        setSelected(prev =>
+                          prev ? toggle(prev, item.id) : prev,
+                        ),
+                    }
+                  : undefined
+              }
+            />
+          )}
+          ListEmptyComponent={
+            words ? (
+              <EmptyState
+                title="No words yet"
+                hint="Tap + to add a word or a rule."
+              />
+            ) : undefined
+          }
+        />
+      )}
       {selected ? (
         <View
           style={[
@@ -473,6 +602,7 @@ export function SetScreen({ navigation, route }: Props) {
       ) : null}
       {menu.element}
       {form.element}
+      {reader.element}
     </>
   );
 }
@@ -484,6 +614,8 @@ const LIST_END_SPACE = 32;
 const styles = StyleSheet.create({
   grow: { flexGrow: 1 },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tabs: { paddingHorizontal: 12, paddingTop: 12 },
+  rules: { flexGrow: 1, paddingTop: 12 },
   header: { padding: 12, paddingBottom: 4, gap: 12 },
   tiles: { flexDirection: 'row', gap: 12 },
   bar: {

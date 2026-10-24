@@ -1,4 +1,4 @@
-import type { LanguageCode, WordInput } from '../../domain/types';
+import type { LanguageCode, RuleInput, WordInput } from '../../domain/types';
 import {
   exactEntries,
   suggestEntries,
@@ -6,7 +6,11 @@ import {
 import { isDictionaryInstalled } from '../../features/dictionary/dictionaryStore';
 import type { DictionaryEntry } from '../../features/dictionary/queries';
 import type { FormSuggestion } from './form';
-import type { FormSheetOptions } from './FormSheet';
+import type { FormSheetChoice, FormSheetOptions } from './FormSheet';
+
+/** Under Markdown inputs. */
+export const MARKDOWN_HINT =
+  'Markdown: **bold**, *italic*, # Heading, - list, | table |, `code`';
 
 /** Single required "name" field, used to create and rename folders and sets. */
 export function nameForm(options: {
@@ -33,7 +37,8 @@ const MIN_TERM_CHARS = 2;
 const MAX_GLOSSES = 6;
 
 /**
- * Word + translation (both required) and any number of example pairs.
+ * Word + translation (both required), any number of example pairs and an
+ * optional Markdown description behind "+ Add description".
  * With the language's dictionary installed, the word field suggests entries
  * with their forms ("der Apfel, die Äpfel") and the translation field
  * suggests the entry's Russian translations.
@@ -116,6 +121,15 @@ export function wordForm(options: {
           onPick: suggestion => ({ translation: suggestion.title }),
         },
       },
+      {
+        key: 'description',
+        label: 'Description',
+        addLabel: 'Add description',
+        initialValue: options.initial?.description,
+        multiline: true,
+        placeholder: 'Notes, forms, usage…',
+        hint: MARKDOWN_HINT,
+      },
     ],
     examples: { initial: options.initial?.examples },
     onSubmit: ({ values, examples }) =>
@@ -123,6 +137,54 @@ export function wordForm(options: {
         term: values.term,
         translation: values.translation,
         examples,
+        description: values.description,
       }),
+  };
+}
+
+/** A rule: a required title and a required Markdown text area. */
+export function ruleForm(options: {
+  title: string;
+  initial?: RuleInput;
+  onSubmit: (rule: RuleInput) => void | Promise<void>;
+}): FormSheetOptions {
+  return {
+    title: options.title,
+    fields: [
+      {
+        key: 'title',
+        label: 'Title',
+        initialValue: options.initial?.title,
+        required: true,
+        placeholder: 'e.g. Perfekt',
+      },
+      {
+        key: 'text',
+        label: 'Rule',
+        initialValue: options.initial?.text,
+        required: true,
+        textArea: true,
+        placeholder: 'haben / sein + Partizip II',
+        hint: MARKDOWN_HINT,
+      },
+    ],
+    onSubmit: ({ values }) =>
+      options.onSubmit({ title: values.title, text: values.text }),
+  };
+}
+
+/** "New word" / "New rule" in one sheet, switched with Word | Rule. */
+export function wordOrRuleForm(options: {
+  word: FormSheetOptions;
+  rule: FormSheetOptions;
+  /** Start with the rule form (e.g. opened from the Rules tab). */
+  ruleFirst?: boolean;
+}): FormSheetChoice {
+  return {
+    variants: [
+      { label: 'Word', options: options.word },
+      { label: 'Rule', options: options.rule },
+    ],
+    initial: options.ruleFirst ? 1 : 0,
   };
 }

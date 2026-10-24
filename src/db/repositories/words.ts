@@ -42,6 +42,7 @@ function toWord(row: Row): Word {
     term: row.term as string,
     translation: row.translation as string,
     examples: parseExamples(row.examples_json),
+    description: (row.description as string | null) ?? '',
     learnedAt: (row.learned_at as number | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
@@ -92,13 +93,14 @@ export async function createWord(setId: ID, input: WordInput): Promise<Word> {
     term: input.term.trim(),
     translation: input.translation.trim(),
     examples: input.examples,
+    description: input.description?.trim() ?? '',
     learnedAt: null,
     createdAt: now,
     updatedAt: now,
   };
   await db.execute(
-    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, sort_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ${NEXT_SORT_AT('?')}, ?, ?)`,
+    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, description, sort_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${NEXT_SORT_AT('?')}, ?, ?)`,
     [
       word.id,
       setId,
@@ -107,6 +109,7 @@ export async function createWord(setId: ID, input: WordInput): Promise<Word> {
       normalizeTerm(word.term),
       word.translation,
       JSON.stringify(word.examples),
+      word.description,
       now,
       setId,
       now,
@@ -121,13 +124,15 @@ export async function updateWord(id: ID, input: WordInput): Promise<void> {
   const term = input.term.trim();
   await getDb().execute(
     `UPDATE words
-     SET term = ?, term_norm = ?, translation = ?, examples_json = ?, updated_at = ?
+     SET term = ?, term_norm = ?, translation = ?, examples_json = ?,
+       description = COALESCE(?, description), updated_at = ?
      WHERE id = ?`,
     [
       term,
       normalizeTerm(term),
       input.translation.trim(),
       JSON.stringify(input.examples),
+      input.description?.trim() ?? null,
       Date.now(),
       id,
     ],

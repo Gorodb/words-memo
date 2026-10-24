@@ -32,7 +32,7 @@ import {
 } from '../../db/repositories/sets';
 import { useQuery } from '../../db/useQuery';
 import { useSettingsStore } from '../../store/settingsStore';
-import { plural } from '../../utils/plural';
+import { setContents } from '../../utils/plural';
 import { SetPickerSheet, type SetPickerHandle } from './SetPickerSheet';
 import type {
   FoldersStackParamList,
@@ -167,7 +167,7 @@ export function FolderScreen({ navigation, route }: Props) {
           <ListRow
             variant="card"
             title={item.name}
-            subtitle={plural(item.wordCount, 'word')}
+            subtitle={setContents(item)}
             pinned={item.pinnedAt !== null}
             chevron
             onPress={() =>

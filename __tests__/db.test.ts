@@ -26,6 +26,12 @@ import {
   setInFolder,
   setSetPinned,
 } from '../src/db/repositories/sets';
+import {
+  createRule,
+  deleteRule,
+  listRules,
+  updateRule,
+} from '../src/db/repositories/rules';
 import { readSettings, writeSetting } from '../src/db/repositories/settings';
 import {
   createWord,
@@ -329,6 +335,101 @@ test('migration v6: existing Chinese data becomes a custom language', () => {
   expect(empty.executeSync('SELECT * FROM languages').rows).toEqual([]);
 });
 
+test('migration v7: existing words get an empty description', () => {
+  const raw = openNodeSqlite() as unknown as DB;
+  migrate(raw, 6);
+  raw.executeSync("INSERT INTO sets VALUES ('s1', 'de', 'Set', 1, 1, NULL)");
+  raw.executeSync(
+    `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, created_at, updated_at)
+     VALUES ('w1', 's1', 'de', 'essen', 'essen', 'есть', 1, 1)`,
+  );
+  migrate(raw, 7);
+  expect(raw.executeSync('SELECT description FROM words').rows).toEqual([
+    { description: '' },
+  ]);
+  expect(raw.executeSync('SELECT * FROM rules').rows).toEqual([]);
+});
+
+test('migration v8: existing rules get an empty title', () => {
+  const raw = openNodeSqlite() as unknown as DB;
+  migrate(raw, 7);
+  raw.executeSync("INSERT INTO sets VALUES ('s1', 'de', 'Set', 1, 1, NULL)");
+  raw.executeSync(
+    "INSERT INTO rules VALUES ('r1', 's1', 'de', '# Perfekt', 1, 1)",
+  );
+  migrate(raw, 8);
+  expect(raw.executeSync('SELECT title, text FROM rules').rows).toEqual([
+    { title: '', text: '# Perfekt' },
+  ]);
+});
+
+describe('descriptions and rules', () => {
+  test('a word keeps its description; an update without one keeps it', async () => {
+    const set = await createSet('de', 'Desc set');
+    const word = await createWord(set.id, {
+      term: 'essen',
+      translation: 'есть',
+      examples: [],
+      description: ' **isst**, aß ',
+    });
+    expect((await listWords(set.id))[0].description).toBe('**isst**, aß');
+
+    await updateWord(word.id, {
+      term: 'essen',
+      translation: 'кушать',
+      examples: [],
+    });
+    expect((await listWords(set.id))[0].description).toBe('**isst**, aß');
+    await updateWord(word.id, {
+      term: 'essen',
+      translation: 'кушать',
+      examples: [],
+      description: '',
+    });
+    expect((await listWords(set.id))[0].description).toBe('');
+  });
+
+  test('rules: oldest first, counted per set, deleted with the set', async () => {
+    const set = await createSet('de', 'Rules set');
+    const first = await createRule(set.id, {
+      title: ' Perfekt ',
+      text: ' haben + **Partizip II** ',
+    });
+    await createRule(set.id, { title: 'Second', text: 'Text' });
+    await createWord(set.id, {
+      term: 'gehen',
+      translation: 'идти',
+      examples: [],
+    });
+
+    expect((await listRules(set.id)).map(r => [r.title, r.text])).toEqual([
+      ['Perfekt', 'haben + **Partizip II**'],
+      ['Second', 'Text'],
+    ]);
+    const listed = (await listSets('de')).find(s => s.id === set.id)!;
+    expect([listed.wordCount, listed.ruleCount]).toEqual([1, 2]);
+    // Rules are never study material.
+    expect(await sampleWordsOutsideSet('nope', 100)).not.toContainEqual(
+      expect.objectContaining({ term: 'Perfekt' }),
+    );
+
+    await updateRule(first.id, { title: 'Perfekt II', text: 'sein' });
+    expect((await listRules(set.id))[0]).toMatchObject({
+      title: 'Perfekt II',
+      text: 'sein',
+    });
+    await deleteRule(first.id);
+    expect(await listRules(set.id)).toHaveLength(1);
+
+    await deleteSet(set.id);
+    expect(
+      db.executeSync('SELECT COUNT(*) AS n FROM rules WHERE set_id = ?', [
+        set.id,
+      ]).rows[0].n,
+    ).toBe(0);
+  });
+});
+
 test('parseExamples accepts legacy strings and pairs', () => {
   expect(parseExamples('["a", {"text": "b", "translation": "б"}]')).toEqual([
     { text: 'a', translation: '' },
@@ -417,8 +518,16 @@ describe('backup round trip', () => {
       term: 'die Katze',
       translation: 'кошка',
       examples: [],
+      description: '## Katze\n- *f*, die Katzen',
     });
+    await createRule(set.id, {
+      title: 'Plural',
+      text: '| Sg | Pl |\n|--|--|\n| Hund | Hunde |',
+    });
+    await createRule(set.id, { title: 'Second', text: 'Second rule' });
     const before = await listWords(set.id);
+    const ruleParts = (r: { title: string; text: string }) => [r.title, r.text];
+    const rulesBefore = (await listRules(set.id)).map(ruleParts);
 
     const shared = await exportSets([set.id]);
     expect(shared.kind).toBe('sets');
@@ -429,7 +538,11 @@ describe('backup round trip', () => {
 
     await deleteSet(set.id);
     const plan = planImport(file, loadExisting, BUNDLED_LANGUAGES, createId);
-    expect(plan.summary).toMatchObject({ wordsAdded: 2, setsCreated: 1 });
+    expect(plan.summary).toMatchObject({
+      wordsAdded: 2,
+      rulesAdded: 2,
+      setsCreated: 1,
+    });
     await applyImportPlan(plan);
 
     const restored = (await listSets(lang)).find(s => s.name === 'RT set')!;
@@ -438,19 +551,23 @@ describe('backup round trip', () => {
       w.term,
       w.translation,
       w.examples,
+      w.description,
       w.learnedAt !== null,
     ];
     expect(after.map(strip)).toEqual(before.map(strip));
+    expect((await listRules(restored.id)).map(ruleParts)).toEqual(rulesBefore);
 
     // Importing the same file again only updates; no duplicates.
     const again = planImport(file, loadExisting, BUNDLED_LANGUAGES, createId);
     expect(again.summary).toMatchObject({
       wordsAdded: 0,
       wordsUpdated: 2,
+      rulesAdded: 0,
       setsCreated: 0,
     });
     await applyImportPlan(again);
     expect(await listWords(restored.id)).toHaveLength(2);
+    expect(await listRules(restored.id)).toHaveLength(2);
   });
 
   test('full export keeps folders in order with their set names', async () => {

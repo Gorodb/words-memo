@@ -105,6 +105,21 @@ const MIGRATIONS: string[][] = [
      WHERE EXISTS (SELECT 1 FROM sets WHERE language_code = 'zh')
         OR EXISTS (SELECT 1 FROM folders WHERE language_code = 'zh')`,
   ],
+  // v7: a long Markdown description per word, and rules (Markdown text, read only, never studied).
+  [
+    "ALTER TABLE words ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+    `CREATE TABLE rules (
+      id TEXT PRIMARY KEY NOT NULL,
+      set_id TEXT NOT NULL REFERENCES sets (id) ON DELETE CASCADE,
+      language_code TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    'CREATE INDEX idx_rules_set ON rules (set_id)',
+  ],
+  // v8: rules get a title (the rules list shows only titles).
+  ["ALTER TABLE rules ADD COLUMN title TEXT NOT NULL DEFAULT ''"],
 ];
 
 /**

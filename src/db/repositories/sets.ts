@@ -7,6 +7,7 @@ import { getDb } from '../database';
 
 export interface WordSetWithCount extends WordSet {
   wordCount: number;
+  ruleCount: number;
 }
 
 export interface PickableSet extends WordSetWithCount {
@@ -28,11 +29,15 @@ function toSet(row: Row): WordSet {
 }
 
 function toSetWithCount(row: Row): WordSetWithCount {
-  return { ...toSet(row), wordCount: row.word_count as number };
+  return {
+    ...toSet(row),
+    wordCount: row.word_count as number,
+    ruleCount: row.rule_count as number,
+  };
 }
 
-const WORD_COUNT =
-  '(SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS word_count';
+const WORD_COUNT = `(SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS word_count,
+  (SELECT COUNT(*) FROM rules r WHERE r.set_id = s.id) AS rule_count`;
 
 /** All sets of a language (Sets tab). */
 export async function listSets(
@@ -76,7 +81,10 @@ export async function listSetsForPicker(
      ORDER BY s.pinned_at IS NULL, s.name COLLATE NOCASE`,
     [folderId, languageCode],
   );
-  return rows.map(row => ({ ...toSetWithCount(row), inFolder: !!row.in_folder }));
+  return rows.map(row => ({
+    ...toSetWithCount(row),
+    inFolder: !!row.in_folder,
+  }));
 }
 
 export async function getSet(id: ID): Promise<WordSet | null> {
@@ -129,10 +137,10 @@ export async function renameSet(id: ID, name: string): Promise<void> {
   notifyChanged('sets');
 }
 
-/** Deletes the set's words and unpins it everywhere (ON DELETE CASCADE). */
+/** Deletes the set's words and rules and unpins it everywhere (ON DELETE CASCADE). */
 export async function deleteSet(id: ID): Promise<void> {
   await getDb().execute('DELETE FROM sets WHERE id = ?', [id]);
-  notifyChanged('sets', 'folder_sets', 'words');
+  notifyChanged('sets', 'folder_sets', 'words', 'rules');
 }
 
 /** Pins / unpins a set; throws PinLimitError above MAX_PINNED per language. */

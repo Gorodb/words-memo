@@ -6,6 +6,7 @@ import ReanimatedSwipeable, {
 import {
   ChevronDown,
   ChevronUp,
+  FileText,
   Square,
   SquareCheck,
 } from 'lucide-react-native';
@@ -20,6 +21,8 @@ interface Props {
   onEdit: () => void;
   onDelete: () => void;
   onToggleLearned: () => void;
+  /** Opens the word's description (only shown when it has one). */
+  onOpenDescription: () => void;
   /** Called when this row's actions start opening (to close the others). */
   onSwipeOpen: (methods: SwipeableMethods) => void;
   /** Present in "Select words" mode: rows show checkboxes, swipe is off. */
@@ -29,8 +32,9 @@ interface Props {
 const ACTION_WIDTH = 80;
 
 /**
- * Swipe left → Edit / Delete. Tap (or "Show examples") → expand examples. "Learned" / "To revise"
- * at the end of the row.
+ * Swipe left → Edit / Delete. Tap (or "Show examples") → expand examples.
+ * "Description" opens the word's Markdown description in a sheet.
+ * "Learned" / "To revise" at the end of the row.
  */
 export function WordRow({
   word,
@@ -39,6 +43,7 @@ export function WordRow({
   onEdit,
   onDelete,
   onToggleLearned,
+  onOpenDescription,
   onSwipeOpen,
   selection,
 }: Props) {
@@ -83,7 +88,9 @@ export function WordRow({
       rightThreshold={ACTION_WIDTH / 2}
       overshootRight={false}
       renderRightActions={renderRightActions}
-      onSwipeableWillOpen={() => swipeRef.current && onSwipeOpen(swipeRef.current)}
+      onSwipeableWillOpen={() =>
+        swipeRef.current && onSwipeOpen(swipeRef.current)
+      }
     >
       <Pressable
         onPress={selection ? selection.onToggle : onToggleExpanded}
@@ -92,10 +99,7 @@ export function WordRow({
           selection ? { checked: selection.selected } : { expanded }
         }
         accessibilityLabel={word.term}
-        style={[
-          styles.row,
-          { backgroundColor: colors.surface },
-        ]}
+        style={[styles.row, { backgroundColor: colors.surface }]}
       >
         {selection ? (
           <CheckIcon
@@ -129,28 +133,54 @@ export function WordRow({
               ))}
             </View>
           ) : null}
-          {word.examples.length > 0 && !selection ? (
-            <Pressable
-              onPress={onToggleExpanded}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityState={{ expanded }}
-              accessibilityLabel={
-                expanded ? 'Hide examples' : `Show ${word.examples.length} examples`
-              }
-              style={({ pressed }) => [styles.more, pressed && styles.pressed]}
-            >
-              <Text style={[styles.moreText, { color: colors.primary }]}>
-                {expanded
-                  ? 'Hide examples'
-                  : `Show examples (${word.examples.length})`}
-              </Text>
-              {expanded ? (
-                <ChevronUp color={colors.primary} size={16} />
-              ) : (
-                <ChevronDown color={colors.primary} size={16} />
-              )}
-            </Pressable>
+          {(word.examples.length > 0 || word.description) && !selection ? (
+            <View style={styles.links}>
+              {word.examples.length > 0 ? (
+                <Pressable
+                  onPress={onToggleExpanded}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded }}
+                  accessibilityLabel={
+                    expanded
+                      ? 'Hide examples'
+                      : `Show ${word.examples.length} examples`
+                  }
+                  style={({ pressed }) => [
+                    styles.more,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.moreText, { color: colors.primary }]}>
+                    {expanded
+                      ? 'Hide examples'
+                      : `Show examples (${word.examples.length})`}
+                  </Text>
+                  {expanded ? (
+                    <ChevronUp color={colors.primary} size={16} />
+                  ) : (
+                    <ChevronDown color={colors.primary} size={16} />
+                  )}
+                </Pressable>
+              ) : null}
+              {word.description ? (
+                <Pressable
+                  onPress={onOpenDescription}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Description of ${word.term}`}
+                  style={({ pressed }) => [
+                    styles.more,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <FileText color={colors.primary} size={14} />
+                  <Text style={[styles.moreText, { color: colors.primary }]}>
+                    Description
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
         </View>
         {selection ? null : (
@@ -189,13 +219,13 @@ const styles = StyleSheet.create({
   example: { gap: 2 },
   exampleText: { fontSize: 14 },
   exampleTranslation: { fontSize: 13, fontStyle: 'italic' },
-  more: {
+  links: {
     flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 2,
+    flexWrap: 'wrap',
+    columnGap: 16,
     marginTop: 6,
   },
+  more: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   moreText: { fontSize: 13, fontWeight: '600' },
   pressed: { opacity: 0.5 },
   actions: { flexDirection: 'row' },

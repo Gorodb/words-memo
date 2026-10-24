@@ -27,6 +27,7 @@ async function setsWithWords(
       createdAt: s.created_at as number,
       updatedAt: s.updated_at as number,
       words: [],
+      rules: [],
     });
   }
   if (result.size === 0) {
@@ -43,9 +44,23 @@ async function setsWithWords(
       term: w.term as string,
       translation: w.translation as string,
       examples: parseExamples(w.examples_json),
+      description: (w.description as string | null) ?? '',
       learnedAt: (w.learned_at as number | null) ?? null,
       createdAt: w.created_at as number,
       updatedAt: w.updated_at as number,
+    });
+  }
+  const { rows: rules } = await db.execute(
+    `SELECT * FROM rules WHERE set_id IN (${ids.map(() => '?').join(', ')})
+     ORDER BY created_at, rowid`,
+    ids,
+  );
+  for (const r of rules) {
+    result.get(r.set_id as string)?.rules.push({
+      title: (r.title as string | null) ?? '',
+      text: r.text as string,
+      createdAt: r.created_at as number,
+      updatedAt: r.updated_at as number,
     });
   }
   return result;
@@ -167,7 +182,18 @@ export function loadExisting(languageCode: LanguageCode): ExistingLanguage {
     const key = r.term_norm as string;
     wordIdsByTerm.set(key, [...(wordIdsByTerm.get(key) ?? []), r.id as string]);
   }
-  return { sets, folders, wordIdsByTerm };
+  const ruleTextsBySet = new Map<ID, string[]>();
+  for (const r of db.executeSync(
+    'SELECT set_id, text FROM rules WHERE language_code = ?',
+    [languageCode],
+  ).rows) {
+    const key = r.set_id as string;
+    ruleTextsBySet.set(key, [
+      ...(ruleTextsBySet.get(key) ?? []),
+      r.text as string,
+    ]);
+  }
+  return { sets, folders, wordIdsByTerm, ruleTextsBySet };
 }
 
 /** Applies an import plan in one transaction (all or nothing). */
@@ -209,15 +235,15 @@ export async function applyImportPlan(plan: ImportPlan): Promise<void> {
     }
     for (const w of plan.updateWords) {
       await tx.execute(
-        'UPDATE words SET translation = ?, examples_json = ?, updated_at = ? WHERE id = ?',
-        [w.translation, JSON.stringify(w.examples), now, w.id],
+        'UPDATE words SET translation = ?, examples_json = ?, description = ?, updated_at = ? WHERE id = ?',
+        [w.translation, JSON.stringify(w.examples), w.description, now, w.id],
       );
     }
     for (const w of plan.insertWords) {
       // The backup's order is newest first, so later rows sort lower.
       await tx.execute(
-        `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, learned_at, sort_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, description, learned_at, sort_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           w.id,
           w.setId,
@@ -226,6 +252,7 @@ export async function applyImportPlan(plan: ImportPlan): Promise<void> {
           w.termNorm,
           w.translation,
           JSON.stringify(w.examples),
+          w.description,
           w.learnedAt,
           w.createdAt,
           w.createdAt,
@@ -233,6 +260,21 @@ export async function applyImportPlan(plan: ImportPlan): Promise<void> {
         ],
       );
     }
+    for (const r of plan.insertRules) {
+      await tx.execute(
+        `INSERT INTO rules (id, set_id, language_code, title, text, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          r.id,
+          r.setId,
+          r.languageCode,
+          r.title,
+          r.text,
+          r.createdAt,
+          r.updatedAt,
+        ],
+      );
+    }
   });
-  notifyChanged('folders', 'sets', 'folder_sets', 'words');
+  notifyChanged('folders', 'sets', 'folder_sets', 'words', 'rules');
 }

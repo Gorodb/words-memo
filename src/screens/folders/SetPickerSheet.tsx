@@ -19,7 +19,7 @@ import {
 import { useQuery } from '../../db/useQuery';
 import type { ID, LanguageCode } from '../../domain/types';
 import { useAppTheme } from '../../theme/ThemeProvider';
-import { plural } from '../../utils/plural';
+import { setContents } from '../../utils/plural';
 
 export interface SetPickerHandle {
   open: () => void;
@@ -109,7 +109,7 @@ export function SetPickerSheet({
             {item.name}
           </Text>
           <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]}>
-            {plural(item.wordCount, 'word')}
+            {setContents(item)}
           </Text>
         </View>
       </Pressable>

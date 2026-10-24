@@ -5,6 +5,7 @@
 import type {
   BackupFile,
   BackupFolder,
+  BackupRule,
   BackupSet,
   BackupWord,
   Example,
@@ -70,10 +71,23 @@ function parseWord(v: unknown, where: string, now: number): BackupWord {
     examples: list(v.examples ?? [], `${where} examples`)
       .map((e, i) => parseExample(e, `${where} example ${i + 1}`))
       .filter(e => e.text.trim() !== ''),
+    description: str(v.description ?? '', `${where} description`).trim(),
     learnedAt:
       typeof v.learnedAt === 'number' && Number.isFinite(v.learnedAt)
         ? v.learnedAt
         : null,
+    createdAt: time(v.createdAt, now),
+    updatedAt: time(v.updatedAt, now),
+  };
+}
+
+function parseRule(v: unknown, where: string, now: number): BackupRule {
+  if (!isObject(v)) {
+    throw new BackupFormatError(`${where} is invalid.`);
+  }
+  return {
+    title: str(v.title ?? '', `${where} title`).trim(),
+    text: str(v.text, `${where} text`).trim(),
     createdAt: time(v.createdAt, now),
     updatedAt: time(v.updatedAt, now),
   };
@@ -94,6 +108,9 @@ function parseSet(v: unknown, where: string, now: number): BackupSet {
     words: list(v.words ?? [], `Set "${name}" words`).map((w, i) =>
       parseWord(w, `Set "${name}", word ${i + 1}`, now),
     ),
+    rules: list(v.rules ?? [], `Set "${name}" rules`)
+      .map((r, i) => parseRule(r, `Set "${name}", rule ${i + 1}`, now))
+      .filter(r => r.text !== ''),
   };
 }
 

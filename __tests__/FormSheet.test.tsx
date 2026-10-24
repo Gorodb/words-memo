@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { TextInput } from 'react-native';
+import { StyleSheet, TextInput } from 'react-native';
 import ReactTestRenderer, {
   type ReactTestInstance,
   type ReactTestRenderer as Renderer,
@@ -9,7 +9,12 @@ import {
   FormSheet,
   type FormSheetHandle,
 } from '../src/components/formSheet/FormSheet';
-import { nameForm, wordForm } from '../src/components/formSheet/forms';
+import {
+  nameForm,
+  ruleForm,
+  wordForm,
+  wordOrRuleForm,
+} from '../src/components/formSheet/forms';
 import { buildResult, canSubmit } from '../src/components/formSheet/form';
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 
@@ -46,14 +51,11 @@ async function renderSheet() {
     ReactTestRenderer.act(async () => {
       await fn();
     });
-  return { ref, inputs, input, button, act };
+  return { ref, inputs, input, button, act, find: root.find.bind(root) };
 }
 
 describe('form logic', () => {
-  const fields = [
-    { key: 'term', required: true },
-    { key: 'note' },
-  ];
+  const fields = [{ key: 'term', required: true }, { key: 'note' }];
 
   test('required fields gate submit; whitespace does not count', () => {
     expect(canSubmit(fields, { term: '', note: 'x' })).toBe(false);
@@ -139,7 +141,95 @@ describe('FormSheet', () => {
       term: 'essen',
       translation: 'есть',
       examples: [{ text: 'Wir essen.', translation: 'Мы едим.' }],
+      description: '',
     });
+  });
+
+  test('word form: description is hidden behind "+ Add description"', async () => {
+    jest.useFakeTimers();
+    const s = await renderSheet();
+    const onSubmit = jest.fn();
+    await s.act(() =>
+      s.ref.current!.open(
+        wordForm({ title: 'New word', languageCode: 'de', onSubmit }),
+      ),
+    );
+    expect(s.inputs().map(i => i.props.accessibilityLabel)).toEqual([
+      'Word or phrase',
+      'Translation',
+    ]);
+    await s.act(() => s.button('+ Add description').props.onPress());
+    await s.act(async () => {
+      jest.advanceTimersByTime(150);
+    });
+    expect(() => s.button('+ Add description')).toThrow();
+    expect(s.button('+ Add example')).toBeTruthy();
+
+    await s.act(() => s.input('Word or phrase').props.onChangeText('essen'));
+    await s.act(() => s.input('Translation').props.onChangeText('есть'));
+    await s.act(() =>
+      s.input('Description').props.onChangeText(' **isst**, aß \n'),
+    );
+    await s.act(() => s.button('Save').props.onPress());
+    expect(onSubmit).toHaveBeenCalledWith({
+      term: 'essen',
+      translation: 'есть',
+      examples: [],
+      description: '**isst**, aß',
+    });
+    jest.useRealTimers();
+  });
+
+  test('word or rule: the switch swaps the form and its submit', async () => {
+    jest.useFakeTimers();
+    const s = await renderSheet();
+    const onWord = jest.fn();
+    const onRule = jest.fn();
+    await s.act(() =>
+      s.ref.current!.open(
+        wordOrRuleForm({
+          word: wordForm({
+            title: 'New word',
+            languageCode: 'de',
+            onSubmit: onWord,
+          }),
+          rule: ruleForm({ title: 'New rule', onSubmit: onRule }),
+        }),
+      ),
+    );
+    expect(s.input('Word or phrase')).toBeTruthy();
+
+    const tab = (label: string) =>
+      s.find(
+        n =>
+          n.props.accessibilityRole === 'tab' &&
+          n.props.accessibilityLabel === label,
+      );
+    await s.act(() => tab('Rule').props.onPress());
+    await s.act(async () => {
+      jest.advanceTimersByTime(150);
+    });
+    expect(s.inputs().map(i => i.props.accessibilityLabel)).toEqual([
+      'Title',
+      'Rule',
+    ]);
+    // A large multiline text area, not a one-line field.
+    expect(s.input('Rule').props.multiline).toBe(true);
+    expect(StyleSheet.flatten(s.input('Rule').props.style).minHeight).toBe(220);
+    expect(s.button('Save').props.disabled).toBe(true);
+    expect(() => s.button('+ Add example')).toThrow();
+
+    await s.act(() => s.input('Rule').props.onChangeText(' haben + **PII** '));
+    // The title is required too.
+    expect(s.button('Save').props.disabled).toBe(true);
+    await s.act(() => s.input('Title').props.onChangeText(' Perfekt '));
+    await s.act(() => s.button('Save').props.onPress());
+    expect(onRule).toHaveBeenCalledWith({
+      title: 'Perfekt',
+      text: 'haben + **PII**',
+    });
+    expect(onWord).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   test('edit word form is prefilled, including examples', async () => {
@@ -155,6 +245,7 @@ describe('FormSheet', () => {
             examples: [
               { text: 'Das Essen ist fertig.', translation: 'Еда готова.' },
             ],
+            description: '# Food',
           },
           onSubmit: jest.fn(),
         }),
@@ -165,7 +256,9 @@ describe('FormSheet', () => {
       'еда',
       'Das Essen ist fertig.',
       'Еда готова.',
+      '# Food',
     ]);
+    expect(() => s.button('+ Add description')).toThrow();
   });
 
   test('inputs are uncontrolled and reset on every open', async () => {
@@ -198,7 +291,11 @@ describe('FormSheet', () => {
     const s = await renderSheet();
     await s.act(() =>
       s.ref.current!.open(
-        wordForm({ title: 'New word', languageCode: 'de', onSubmit: jest.fn() }),
+        wordForm({
+          title: 'New word',
+          languageCode: 'de',
+          onSubmit: jest.fn(),
+        }),
       ),
     );
     await s.act(() => s.button('+ Add example').props.onPress());
@@ -239,7 +336,10 @@ describe('FormSheet', () => {
     await s.act(async () => {
       jest.advanceTimersByTime(250);
     });
-    expect(load).toHaveBeenLastCalledWith('Apf', { term: 'Apf', translation: '' });
+    expect(load).toHaveBeenLastCalledWith('Apf', {
+      term: 'Apf',
+      translation: '',
+    });
 
     await s.act(() =>
       s.button('Suggestion der Apfel, die Äpfel').props.onPress(),

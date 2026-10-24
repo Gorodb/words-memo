@@ -17,6 +17,7 @@ const word = (id: string, learned = false): Word => ({
   term: `term ${id}`,
   translation: `translation ${id}`,
   examples: [],
+  description: '',
   learnedAt: learned ? 1 : null,
   createdAt: 0,
   updatedAt: 0,

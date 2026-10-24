@@ -14,6 +14,7 @@ const word = (term: string, translation = term, extra = {}) => ({
   term,
   translation,
   examples: [],
+  description: '',
   learnedAt: null,
   createdAt: 1,
   updatedAt: 1,
@@ -32,6 +33,7 @@ const empty = (): ExistingLanguage => ({
   sets: [],
   folders: [],
   wordIdsByTerm: new Map(),
+  ruleTextsBySet: new Map(),
 });
 
 const known = (...codes: string[]): Language[] =>
@@ -81,11 +83,56 @@ describe('parseBackup', () => {
         { text: 'Wir essen.', translation: '' },
         { text: 'x', translation: 'y' },
       ],
+      description: '', // files from older versions have none
       learnedAt: null,
       createdAt: 100,
       updatedAt: 100,
     });
+    expect(set.rules).toEqual([]);
     expect(parsed.languages[0].folders).toEqual([]);
+  });
+
+  test('reads descriptions and rules; blank rules are dropped', () => {
+    const parsed = parseBackup(
+      JSON.stringify({
+        app: 'wordsLearning',
+        version: 1,
+        languages: [
+          {
+            code: 'de',
+            sets: [
+              {
+                name: 'S',
+                words: [
+                  {
+                    term: 'essen',
+                    translation: 'есть',
+                    description: ' **x** ',
+                  },
+                ],
+                rules: [
+                  { title: ' Perfekt ', text: ' haben ', createdAt: 7 },
+                  { text: 'no title (older version)' },
+                  { title: 'Blank', text: '  ' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+      100,
+    );
+    const set = parsed.languages[0].sets[0];
+    expect(set.words[0].description).toBe('**x**');
+    expect(set.rules).toEqual([
+      { title: 'Perfekt', text: 'haben', createdAt: 7, updatedAt: 100 },
+      {
+        title: '',
+        text: 'no title (older version)',
+        createdAt: 100,
+        updatedAt: 100,
+      },
+    ]);
   });
 
   test('rejects other files with a readable message', () => {
@@ -126,8 +173,15 @@ describe('planImport', () => {
               createdAt: 1,
               updatedAt: 1,
               words: [word('Apfel')],
+              rules: [],
             },
-            { name: 'New', createdAt: 1, updatedAt: 1, words: [word('Haus')] },
+            {
+              name: 'New',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [word('Haus')],
+              rules: [],
+            },
           ],
         },
       ]),
@@ -155,6 +209,7 @@ describe('planImport', () => {
         ['essen', ['w1', 'w2']],
         ['das Essen', ['w3']],
       ]),
+      ruleTextsBySet: new Map(),
     };
     const examples = [{ text: 'Wir essen.', translation: 'Мы едим.' }];
     const plan = planImport(
@@ -168,9 +223,13 @@ describe('planImport', () => {
               createdAt: 1,
               updatedAt: 1,
               words: [
-                word('  essen ', 'есть, кушать', { examples }),
+                word('  essen ', 'есть, кушать', {
+                  examples,
+                  description: 'Strong verb: **isst, aß**',
+                }),
                 word('Essen', 'еда?'), // different case → new word
               ],
+              rules: [],
             },
           ],
         },
@@ -179,12 +238,59 @@ describe('planImport', () => {
       known('de'),
       ids(),
     );
+    const description = 'Strong verb: **isst, aß**';
     expect(plan.updateWords).toEqual([
-      { id: 'w1', translation: 'есть, кушать', examples },
-      { id: 'w2', translation: 'есть, кушать', examples },
+      { id: 'w1', translation: 'есть, кушать', examples, description },
+      { id: 'w2', translation: 'есть, кушать', examples, description },
     ]);
     expect(plan.insertWords.map(w => w.term)).toEqual(['Essen']);
     expect(plan.summary).toMatchObject({ wordsAdded: 1, wordsUpdated: 2 });
+  });
+
+  test('rules are added unless the set already has the same text', () => {
+    const rule = (text: string) => ({
+      title: text,
+      text,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const plan = planImport(
+      backup([
+        {
+          code: 'de',
+          folders: [],
+          sets: [
+            {
+              name: 'A',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [],
+              rules: [rule('Known'), rule('New'), rule('New')],
+            },
+            {
+              name: 'B',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [],
+              rules: [rule('Known')],
+            },
+          ],
+        },
+      ]),
+      () => ({
+        ...empty(),
+        sets: [{ id: 'a', name: 'A' }],
+        ruleTextsBySet: new Map([['a', ['Known']]]),
+      }),
+      known('de'),
+      ids(),
+    );
+    expect(plan.insertRules.map(r => [r.setId, r.text])).toEqual([
+      ['a', 'New'],
+      ['new2', 'Known'], // ids: rule New=new1, set B=new2
+    ]);
+    expect(plan.summary.rulesAdded).toBe(2);
+    expect(describeSummary(plan.summary)).toContain('2 rules added');
   });
 
   test('folders are matched or created, and sets are added to them once', () => {
@@ -202,8 +308,14 @@ describe('planImport', () => {
             { name: 'Work', createdAt: 1, updatedAt: 1, setNames: ['Office'] },
           ],
           sets: [
-            { name: 'Airport', createdAt: 1, updatedAt: 1, words: [] },
-            { name: 'Hotel', createdAt: 1, updatedAt: 1, words: [] },
+            {
+              name: 'Airport',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [],
+              rules: [],
+            },
+            { name: 'Hotel', createdAt: 1, updatedAt: 1, words: [], rules: [] },
           ],
         },
       ]),
@@ -231,7 +343,13 @@ describe('planImport', () => {
           code: 'fr',
           folders: [],
           sets: [
-            { name: 'S', createdAt: 1, updatedAt: 1, words: [word('chat')] },
+            {
+              name: 'S',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [word('chat')],
+              rules: [],
+            },
           ],
         },
       ]),
@@ -252,21 +370,41 @@ describe('planImport', () => {
         name: 'French',
         folders: [],
         sets: [
-          { name: 'A', createdAt: 1, updatedAt: 1, words: [word('chat')] },
+          {
+            name: 'A',
+            createdAt: 1,
+            updatedAt: 1,
+            words: [word('chat')],
+            rules: [],
+          },
         ],
       },
       {
         code: 'x-other',
         name: ' latin ',
         folders: [],
-        sets: [{ name: 'B', createdAt: 1, updatedAt: 1, words: [word('lux')] }],
+        sets: [
+          {
+            name: 'B',
+            createdAt: 1,
+            updatedAt: 1,
+            words: [word('lux')],
+            rules: [],
+          },
+        ],
       },
       {
         code: 'x-new',
         name: 'Esperanto',
         folders: [],
         sets: [
-          { name: 'C', createdAt: 1, updatedAt: 1, words: [word('saluton')] },
+          {
+            name: 'C',
+            createdAt: 1,
+            updatedAt: 1,
+            words: [word('saluton')],
+            rules: [],
+          },
         ],
       },
     ]);
@@ -302,7 +440,15 @@ describe('planImport', () => {
           code: 'x-de',
           name: 'de',
           folders: [],
-          sets: [{ name: 'S', createdAt: 1, updatedAt: 1, words: [word('x')] }],
+          sets: [
+            {
+              name: 'S',
+              createdAt: 1,
+              updatedAt: 1,
+              words: [word('x')],
+              rules: [],
+            },
+          ],
         },
       ]),
       empty,
