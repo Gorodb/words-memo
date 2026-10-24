@@ -19,10 +19,12 @@ import {
   BottomSheetScrollView,
   BottomSheetTextInput,
   type BottomSheetBackdropProps,
+  type BottomSheetScrollViewMethods,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleMinus } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeProvider';
+import { useKeyboardHeight } from '../../utils/useKeyboardHeight';
 import { IconButton } from '../IconButton';
 import { TextButton } from '../TextButton';
 import {
@@ -76,7 +78,9 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const keyboardHeight = useKeyboardHeight();
   const sheetRef = useRef<BottomSheetModal>(null);
+  const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
   const nextExampleId = useRef(0);
   const inputRefs = useRef<Record<string, Focusable | null>>({});
   const focusedSinceOpen = useRef(false);
@@ -197,7 +201,11 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     }
   }, [options, submitEnabled, values, examples]);
 
-  const addExample = () => setExamples(prev => [...prev, newExample()]);
+  const addExample = () => {
+    setExamples(prev => [...prev, newExample()]);
+    // The new row is near the bottom: keep it (and the buttons) in view.
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  };
 
   const updateExample = (
     id: number,
@@ -227,9 +235,12 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
       enableDynamicSizing
       // Never taller than the screen below the status bar; longer content scrolls.
       topInset={insets.top}
-      maxDynamicContentSize={height - insets.top - TOP_GAP}
-      // Lift the sheet above the keyboard; when it doesn't fit, the content
-      // shrinks to the space above the keyboard and scrolls.
+      // While the keyboard is open, the sheet must also fit above it. The
+      // library only shrinks the scroll area for the keyboard in some cases,
+      // so content that grows with the keyboard open (adding examples) would
+      // otherwise end up behind the keyboard, out of scroll reach.
+      maxDynamicContentSize={height - insets.top - TOP_GAP - keyboardHeight}
+      // Lift the sheet above the keyboard; longer content scrolls.
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       // Must be adjustPan: the app is edge-to-edge, so Android never resizes the
@@ -248,6 +259,7 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
       }}
     >
       <BottomSheetScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
