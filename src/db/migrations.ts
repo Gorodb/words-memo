@@ -120,7 +120,61 @@ const MIGRATIONS: string[][] = [
   ],
   // v8: rules get a title (the rules list shows only titles).
   ["ALTER TABLE rules ADD COLUMN title TEXT NOT NULL DEFAULT ''"],
+  // v9: account sync. Triggers record every changed row (also cascades and
+  // changes made while signed out) as (sync table, row key) in sync_queue;
+  // a row in sync_pause turns them off while pulled changes are applied.
+  [
+    `CREATE TABLE sync_queue (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name TEXT NOT NULL,
+      row_key TEXT NOT NULL,
+      UNIQUE (table_name, row_key)
+    )`,
+    'CREATE TABLE sync_pause (id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1))',
+    ...syncTriggers('languages', 'languages', row => `${row}.code`),
+    ...syncTriggers('sets', 'sets', row => `${row}.id`),
+    ...syncTriggers('folders', 'folders', row => `${row}.id`),
+    ...syncTriggers(
+      'folder_sets',
+      'folderSets',
+      row => `${row}.folder_id || ':' || ${row}.set_id`,
+    ),
+    ...syncTriggers('words', 'words', row => `${row}.id`),
+    ...syncTriggers('rules', 'rules', row => `${row}.id`),
+  ],
 ];
+
+/**
+ * Insert / update / delete triggers that move the row to the end of the sync
+ * queue. DELETE + INSERT instead of INSERT OR REPLACE: an outer
+ * `INSERT OR IGNORE` would turn the trigger's REPLACE into IGNORE and keep the
+ * old `seq`. Part of v9: never change it; to change the triggers, add a
+ * migration that drops and recreates them.
+ */
+function syncTriggers(
+  table: string,
+  syncTable: string,
+  key: (row: 'NEW' | 'OLD') => string,
+): string[] {
+  const events = [
+    ['insert', 'INSERT', 'NEW'],
+    ['update', 'UPDATE', 'NEW'],
+    ['delete', 'DELETE', 'OLD'],
+  ] as const;
+  return events.map(
+    ([name, event, row]) => `CREATE TRIGGER sync_${table}_${name}
+      AFTER ${event} ON ${table}
+      WHEN NOT EXISTS (SELECT 1 FROM sync_pause)
+      BEGIN
+        DELETE FROM sync_queue WHERE table_name = '${syncTable}' AND row_key = ${key(
+      row,
+    )};
+        INSERT INTO sync_queue (table_name, row_key) VALUES ('${syncTable}', ${key(
+      row,
+    )});
+      END`,
+  );
+}
 
 /**
  * Foreign keys are switched off while migrating so tables can be rebuilt

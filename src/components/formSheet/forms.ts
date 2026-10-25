@@ -173,6 +173,34 @@ export function ruleForm(options: {
   };
 }
 
+/** Email + password, both required. Return false from onSubmit to stay open. */
+export function signInForm(options: {
+  onSubmit: (email: string, password: string) => unknown | Promise<unknown>;
+}): FormSheetOptions {
+  return {
+    title: 'Sign in',
+    submitLabel: 'Sign in',
+    errorTitle: 'Could not sign in',
+    fields: [
+      {
+        key: 'email',
+        label: 'Email',
+        kind: 'email',
+        required: true,
+        placeholder: 'you@example.com',
+      },
+      {
+        key: 'password',
+        label: 'Password',
+        kind: 'password',
+        required: true,
+        hint: 'No account yet? Sign in with a new email to create one.',
+      },
+    ],
+    onSubmit: ({ values }) => options.onSubmit(values.email, values.password),
+  };
+}
+
 /** "New word" / "New rule" in one sheet, switched with Word | Rule. */
 export function wordOrRuleForm(options: {
   word: FormSheetOptions;

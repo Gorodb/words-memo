@@ -1,0 +1,32 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { User } from '../users/user.entity.ts';
+
+/** A login session. Tokens never expire; logout deletes the row. */
+@Entity('auth_tokens')
+export class AuthToken {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user?: User;
+
+  /** SHA-256 of the bearer token; the token itself is never stored. */
+  @Column({ name: 'token_hash', type: 'char', length: 64, unique: true })
+  tokenHash: string;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}

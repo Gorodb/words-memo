@@ -35,6 +35,8 @@ export interface FormField {
   textArea?: boolean;
   /** Small muted text below the input. */
   hint?: string;
+  /** Keyboard, autofill and masking for an email or password input. */
+  kind?: 'email' | 'password';
   /**
    * Optional extra: the field stays hidden behind a "+ <addLabel>" button
    * (next to "+ Add example") until tapped, or until it has an initial value.

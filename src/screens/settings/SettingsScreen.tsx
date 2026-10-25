@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
 import { Alert, ScrollView } from 'react-native';
-import { Check, Download, Upload } from 'lucide-react-native';
+import {
+  Check,
+  Download,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Upload,
+} from 'lucide-react-native';
 import { useActionMenu } from '../../components/ActionMenuSheet';
+import { signInForm } from '../../components/formSheet/forms';
+import { useFormSheet } from '../../components/formSheet/FormSheet';
 import { ListRow } from '../../components/ListRow';
 import { SectionHeader } from '../../components/SectionHeader';
 import { DICTIONARY_ATTRIBUTION } from '../../config/languages';
@@ -13,6 +22,13 @@ import {
   shareFullBackup,
 } from '../../features/backup/backupFiles';
 import { describeSummary } from '../../features/backup/merge';
+import {
+  register,
+  signIn,
+  signOut,
+  syncNow,
+  useSyncStore,
+} from '../../features/sync/syncStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { ThemeMode } from '../../domain/types';
@@ -25,12 +41,95 @@ const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string }> = [
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+function ask(
+  title: string,
+  message: string,
+  confirm: string,
+): Promise<boolean> {
+  return new Promise(resolve =>
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: confirm, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    ),
+  );
+}
+
+function syncedAt(time: number): string {
+  const date = new Date(time);
+  const clock = date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return date.toDateString() === new Date().toDateString()
+    ? clock
+    : `${date.toLocaleDateString()} ${clock}`;
+}
+
+function syncSubtitle({
+  status,
+  lastSyncedAt,
+  message,
+}: ReturnType<typeof useSyncStore.getState>): string {
+  switch (status) {
+    case 'syncing':
+      return 'Syncing…';
+    case 'offline':
+      return 'Offline. Changes sync when the connection is back.';
+    case 'error':
+      return `Sync failed: ${message ?? 'unknown error'}. Retrying…`;
+    default:
+      return lastSyncedAt
+        ? `Synced ${syncedAt(lastSyncedAt)}. Tap to sync now.`
+        : 'Waiting to sync…';
+  }
+}
+
+/** Sign in, or offer to create the account when the email is unknown. */
+async function signInOrRegister(
+  email: string,
+  password: string,
+): Promise<boolean> {
+  if ((await signIn(email, password)) === 'signedIn') {
+    return true;
+  }
+  const create = await ask(
+    'No account with this email',
+    `Create an account for ${email} with this password?`,
+    'Create account',
+  );
+  if (!create) {
+    return false; // keep the sheet open to fix the email
+  }
+  await register(email, password);
+  return true;
+}
+
 export function SettingsScreen() {
   const { colors } = useAppTheme();
   const themeMode = useSettingsStore(s => s.themeMode);
   const setThemeMode = useSettingsStore(s => s.setThemeMode);
+  const sync = useSyncStore();
   const menu = useActionMenu();
+  const sheet = useFormSheet();
   const [busy, setBusy] = useState(false);
+
+  const openSignIn = () =>
+    sheet.open(signInForm({ onSubmit: signInOrRegister }));
+
+  const confirmSignOut = () =>
+    Alert.alert(
+      'Sign out?',
+      'Your words stay on this phone and the app keeps working offline. Sign in again to resume syncing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: signOut },
+      ],
+    );
 
   /** Runs one backup action at a time and reports failures. */
   const run = async (title: string, action: () => Promise<void>) => {
@@ -105,6 +204,33 @@ export function SettingsScreen() {
 
   return (
     <ScrollView>
+      <SectionHeader title="Account" />
+      {sync.email ? (
+        <>
+          <ListRow
+            title={sync.email}
+            subtitle={syncSubtitle(sync)}
+            onPress={syncNow}
+            right={<RefreshCw color={colors.textSecondary} size={20} />}
+          />
+          <ListRow
+            title="Sign out"
+            onPress={confirmSignOut}
+            right={<LogOut color={colors.textSecondary} size={20} />}
+          />
+        </>
+      ) : (
+        <ListRow
+          title="Sign in"
+          subtitle={
+            sync.message ??
+            'Sync your words across devices. Without an account everything stays on this phone.'
+          }
+          onPress={openSignIn}
+          right={<LogIn color={colors.textSecondary} size={20} />}
+        />
+      )}
+
       <SectionHeader title="Appearance" />
       {THEME_OPTIONS.map(({ mode, label }) => (
         <ListRow
@@ -136,6 +262,7 @@ export function SettingsScreen() {
       <SectionHeader title="About" />
       <ListRow title="Dictionaries" subtitle={DICTIONARY_ATTRIBUTION} />
       {menu.element}
+      {sheet.element}
     </ScrollView>
   );
 }

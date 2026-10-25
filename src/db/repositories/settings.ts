@@ -14,3 +14,7 @@ export function writeSetting(key: string, value: string): void {
     [key, value],
   );
 }
+
+export function deleteSetting(key: string): void {
+  getDb().executeSync('DELETE FROM settings WHERE key = ?', [key]);
+}

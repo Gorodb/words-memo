@@ -1,0 +1,142 @@
+# words-memo backend
+
+Account and sync server for the wordsLearning app: NestJS 12, TypeORM 1 and PostgreSQL.
+
+The app stays offline-first. Its SQLite database is the only thing it reads from, and this server only keeps a copy per account so that other devices (and, later, a website) can sync with it.
+
+## Run
+
+```sh
+cp .env.example .env
+docker compose up -d db     # PostgreSQL 17 on localhost:5432
+npm install
+npm run start:dev           # http://localhost:3000, applies migrations on start
+```
+
+Everything in Docker: `docker compose up -d --build`.
+
+For the Android emulator or a USB device, run `adb reverse tcp:3000 tcp:3000` so the app's `http://localhost:3000` (see `src/config/sync.ts` in the app) reaches this machine. Release builds need an HTTPS URL there.
+
+| Script | |
+|---|---|
+| `npm run build` / `npm run start:prod` | compile to `dist/`, run it |
+| `npm test` | unit tests (`node --test`, pure modules only) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run migration:generate -- src/database/migrations/<Name>` | diff the entities against the DB into a new migration, then add its class to `MIGRATIONS` in `src/database/typeorm.options.ts` |
+| `npm run migration:run` / `migration:revert` | outside of app start-up |
+
+The package is ESM (Nest 12 is). Relative imports use `.ts` extensions, which `rewriteRelativeImportExtensions` turns into `.js` on build. That way plain Node can run the pure modules and their tests straight from `src/`. Migrations and entities are listed explicitly in `src/database/typeorm.options.ts`, with no globs, and `synchronize` is off.
+
+## Deploy on cPanel
+
+This needs a cPanel host that has **Setup Node.js App** (CloudLinux Node.js Selector / Passenger) and **PostgreSQL Databases**. If PostgreSQL isn't in your cPanel, ask the host to enable it, or use an external PostgreSQL (`DATABASE_URL` can point anywhere).
+
+### 1. Database
+
+1. cPanel → **PostgreSQL Databases**:
+   - Create a database, e.g. `words`. cPanel prefixes it to `<cpuser>_words`.
+   - Create a user with a strong password, e.g. `<cpuser>_api`.
+   - **Add the user to the database** with all privileges.
+2. You need PostgreSQL **13 or newer**, because the migration uses the built-in `gen_random_uuid()`. cPanel shows the version on the **phpPgAdmin** start page, or ask the host.
+3. Your connection string is:
+   `postgres://<cpuser>_api:<password>@localhost:5432/<cpuser>_words`
+   URL-encode special characters in the password, e.g. `@` → `%40`.
+
+### 2. Build locally
+
+The host only runs the compiled code. Don't install TypeScript or the Nest CLI there.
+
+```sh
+cd backend
+npm ci
+npm run build
+```
+
+Upload these files and folders, **without `node_modules`**:
+
+```
+app.cjs
+dist/
+package.json
+package-lock.json
+```
+
+### 3. Upload
+
+1. cPanel → **File Manager**: create a folder outside `public_html`, e.g. `/home/<cpuser>/words-api`.
+2. Upload the files there. The easiest way is to zip them locally, upload the zip, then use **Extract**. FTP/SFTP or `scp` also work.
+
+### 4. Create the Node.js app
+
+1. cPanel → **Setup Node.js App** → **Create Application**:
+
+   | Field | Value |
+   |---|---|
+   | Node.js version | **22.18 or newer**, or 24 if listed (the `engines` field in `package.json`) |
+   | Application mode | Production |
+   | Application root | `words-api` |
+   | Application URL | the domain or subdomain for the API, e.g. `api.example.com` (create the subdomain under **Domains** first) |
+   | Application startup file | `app.cjs` |
+
+2. In **Environment variables**, add:
+
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | the connection string from step 1 |
+   | `BODY_LIMIT` | `50mb` |
+   | `NODE_ENV` | `production` |
+
+   Don't set `PORT`: Passenger chooses it.
+3. Click **Create**, then **Run NPM Install**. It installs the production dependencies into the app's virtual environment, and `node_modules` becomes a symlink there.
+4. Click **Restart**. The first start creates the tables (migrations run on start).
+5. Open `https://api.example.com/health`. It should return `{"ok":true}`.
+
+If you have SSH or **Terminal**, the app page shows the command to enter its environment, e.g. `source /home/<cpuser>/nodevenv/words-api/22/bin/activate && cd /home/<cpuser>/words-api`. From there `npm install --omit=dev` and `node app.cjs` work too. Note that `node app.cjs` listens on 3000 and is only for checking errors; Passenger runs the real app.
+
+### 5. HTTPS and the app
+
+1. cPanel → **SSL/TLS Status**: run **AutoSSL** for the API domain. Android release builds only allow HTTPS.
+2. In the app, set `SYNC_API_URL` in `src/config/sync.ts` to `https://api.example.com`, then build a release.
+
+### Updating
+
+1. Run `npm run build` locally.
+2. Upload the new `dist/` (and `package.json` / `package-lock.json` if dependencies changed, then **Run NPM Install**).
+3. Click **Restart**, or run `touch tmp/restart.txt` in the app root.
+
+New migrations run on that restart.
+
+### Troubleshooting
+
+- **The app doesn't start**: check the log. In **Setup Node.js App**, the app's `stderr.log` (or `passenger.log`) is in the application root. Common causes:
+  - `DATABASE_URL` is wrong.
+  - The DB user wasn't added to the database.
+  - The Node.js version is older than 22.18.
+- **The first sync fails with 413** on a large word list: the web server in front of Passenger has its own request size limit. Ask the host to raise `LimitRequestBody` (Apache) or the LiteSpeed request body limit to at least 50 MB.
+- **`function gen_random_uuid() does not exist`**: PostgreSQL is older than 13. Ask the host to run `CREATE EXTENSION pgcrypto;` in the database, or to upgrade PostgreSQL.
+
+## API
+
+All bodies are JSON. Errors look like `{ code?, message }`, and the app branches on `code`.
+
+| | | |
+|---|---|---|
+| `POST /auth/register` | `{email, password}` | 201 `{token, user}` · 409 `EMAIL_TAKEN` · 400 validation |
+| `POST /auth/login` | `{email, password}` | 200 `{token, user}` · 404 `USER_NOT_FOUND` · 401 `WRONG_PASSWORD` |
+| `POST /auth/logout` | bearer | 204, revokes the token |
+| `GET /auth/me` | bearer | `{id, email}` |
+| `POST /sync` | bearer, `SyncRequest` | `SyncResponse` · 409 `SYNC_CURSOR_AHEAD` · 400 `BAD_SYNC_REQUEST` · 401 `UNAUTHORIZED` |
+| `GET /health` | | `{ok: true}` |
+
+- **Auth**: there's no email confirmation. An email is unique (trimmed, case-insensitive) and the password is at least 6 characters. Passwords are hashed with scrypt (`node:crypto`). Tokens are 32 random bytes; only their SHA-256 is stored (`auth_tokens`). They never expire, and logout deletes them.
+- **Sync** (`src/sync/protocol.ts`, mirrored in the app's `src/features/sync/protocol.ts`): one request pushes the phone's changes and pulls everyone else's.
+  - Tables: `languages` (custom ones only, keyed by code), `sets`, `folders`, `folderSets` (keyed `folderId:setId`), `words`, `rules`. Each one is `{upserts: Record[], deletes: key[]}`.
+  - `cursor: null` is a full sync, used after sign in. The phone sends every row and gets back every live row it didn't send.
+  - The phone is the source of truth. Pushed rows overwrite the server's copy without comparing timestamps.
+  - Each request that writes gives all its rows the same new `version` (`users.sync_version + 1`). The user row is locked `FOR UPDATE`, so the requests of one user run one at a time. A pull returns rows with `version > cursor`, minus the rows of the current request.
+  - Deletions stay as tombstones (`deleted = true`) so other devices can pull them.
+  - `SYNC_CURSOR_AHEAD` means the cursor is newer than the server's history (the DB was reset or restored). The app then runs a full sync again.
+
+## Schema
+
+`users`, `auth_tokens`, plus one table per synced type. Those have the primary key `(user_id, id)`, the app's columns, `version` and `deleted`, with an index on `(user_id, version)`. There are no foreign keys between the content tables: devices push in any order, and the app skips rows whose parent it doesn't have. The future website can read the same tables, filtering on `deleted = false`, and write through `/sync` or by bumping `version` the same way.

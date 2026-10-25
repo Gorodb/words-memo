@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Offline React Native app (Android + iOS, no backend, no auth) for learning English and German words (plus languages the user adds) with Russian translations. **`.claude/PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Feature plans live in `.claude/plans/`. Read it before starting a feature and update it when a step is completed or a decision changes.
+Offline-first React Native app (Android + iOS) for learning English and German words (plus languages the user adds) with Russian translations. An optional account syncs the data through the NestJS backend in `backend/` (see "Sync" below); without one, the app works fully offline. **`.claude/PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Feature plans live in `.claude/plans/`. Read it before starting a feature and update it when a step is completed or a decision changes.
 
 ## Commands
 
@@ -22,7 +22,11 @@ npm run dict:build             # build dictionaries/build/<lang>-ru.db (~20 s)
 node scripts/dictionary/query.ts de essen Apf   # try lookups against a built dictionary
 npm run android:release        # release APKs per ABI → dist/words-memo-<versionName>-arm64.apk / -armv7.apk (signing: WORDS_UPLOAD_* in ~/.gradle/gradle.properties)
 npm run brand                  # regenerate launcher icons from scripts/brand/artwork.ts (then re-run the bootsplash command it prints)
+cd backend && docker compose up -d db && npm run start:dev   # sync server on :3000 (see backend/README.md)
+adb reverse tcp:3000 tcp:3000  # lets the app's http://localhost:3000 reach it from an emulator / USB device
 ```
+
+`backend/` is a separate Node project (ESM, its own `package.json`, `npm test` = `node --test`). The root `tsconfig.json`, ESLint, Jest and Metro all ignore it.
 
 Release signing: `android/app/build.gradle` uses the upload key from the `WORDS_UPLOAD_*` gradle properties and falls back to the debug key with a warning. Updates must always be signed with the same key: a key change forces an uninstall, which deletes the user's local words. Bump `versionCode` and `versionName` in `android/app/build.gradle` for every release you install over an older one. ABI splits (arm64-v8a, armeabi-v7a) are enabled only for release tasks.
 
@@ -54,6 +58,20 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 - **Pure parts**: `features/backup/format.ts` turns untrusted JSON into `BackupFile` with readable errors, and `merge.ts` (`planImport`) builds an `ImportPlan` from a backup and a snapshot of the DB (`loadExisting`). Keep merge rules there and unit test them (`__tests__/backup.test.ts`).
 - **Writes**: `applyImportPlan` writes the plan in one transaction. `exportAll` / `exportSets` build files from the DB. `db.test.ts` has a round trip (share a set, delete it, import it, import again).
 - **Native**: `backupFiles.ts` writes to the cache dir, then calls `saveDocuments` (save as), `react-native-share` (share sheet) or `pick` + `keepLocalCopy` + `readFile` (import). Picker cancellation (`OPERATION_CANCELED`) and share cancel are normal outcomes, not errors.
+
+## Sync
+
+- **Model**: the phone's SQLite stays the only data the app reads. The server is a copy per account. The phone is the source of truth: pushed rows overwrite the server's copy, and pulled rows never overwrite a row changed locally since the push.
+- **Change capture**: triggers from migration v9 record every insert, update and delete (including cascades and changes made while signed out) as `(sync table, row key)` in `sync_queue`. A row in `sync_pause` turns them off. Repositories don't do anything for sync. They only need `notifyChanged`, which schedules a push. A new synced table needs triggers in a new migration, a `TABLES` entry in `db/repositories/sync.ts`, and a matching type in both `protocol.ts` files.
+- **Repository** (`db/repositories/sync.ts`):
+  - `collectChanges(full)`: the queued rows, or every row on a full sync.
+  - `applyRemoteChanges(changes, upToSeq)`: upserts parents first and skips rows whose parent is missing. Deletes children first and never deletes a parent that holds unpushed local changes. Acks the queue.
+  - `applyRemoteChanges` is **synchronous** (`executeSync`) on purpose. op-sqlite's plain `execute` doesn't wait for a transaction, so a UI write during an async transaction would run inside it with the triggers paused.
+- **Engine** (`features/sync/syncStore.ts`): `startSync()` in `bootstrap`. It syncs on sign in (full: no `sync.cursor` setting), on DB changes (debounced), when the app comes to the foreground, when the network comes back (`@react-native-community/netinfo`), and with backoff retries.
+  - 401 signs out locally. `SYNC_CURSOR_AHEAD` makes it run a full sync.
+  - The token, email and cursor live in the `settings` table (`sync.*`). Signing out keeps all words.
+- **UI**: Settings → Account. Sign in is `signInForm()`. An unknown email (`USER_NOT_FOUND`) asks to create the account. FormSheet `onSubmit` returning `false` keeps the sheet open, and `kind: 'email' | 'password'` sets keyboard, autofill and masking.
+- **Server URL**: `src/config/sync.ts` (dev `http://localhost:3000`; release needs HTTPS).
 
 ## App icon and splash
 
@@ -90,4 +108,4 @@ The source data comes from Wiktionary (kaikki.org / wiktextract, CC BY-SA), not 
 
 ## Testing
 
-`jest.config.js` uses `react-native-reanimated/jest/resolver` so code that imports reanimated or worklets directly loads in Jest. `jest.setup.js` globally mocks gesture-handler, reanimated, bottom-sheet and op-sqlite (as a no-op). `react-native-reorderable-list`, `ReanimatedSwipeable` and `react-native-bootsplash` are mocked, and `@dr.pogodin/react-native-fs` reports dictionaries as not installed. `__tests__/dictionary.test.ts` builds a dictionary in memory from real fixture lines with the same writer and queries. `__tests__/db.test.ts` replaces the op-sqlite mock with `test-utils/sqliteAdapter.ts`, an adapter over Node's built-in `node:sqlite`, so the real migrations and repository SQL run in Jest. Use that pattern for DB logic. `lucide-react-native` is mapped to its CJS build in `jest.config.js` because the RN preset doesn't transform `.mjs` files.
+`jest.config.js` uses `react-native-reanimated/jest/resolver` so code that imports reanimated or worklets directly loads in Jest. `jest.setup.js` globally mocks gesture-handler, reanimated, bottom-sheet and op-sqlite (as a no-op). `react-native-reorderable-list`, `ReanimatedSwipeable`, `react-native-bootsplash` and NetInfo (its own jest mock) are mocked, and `@dr.pogodin/react-native-fs` reports dictionaries as not installed. `__tests__/dictionary.test.ts` builds a dictionary in memory from real fixture lines with the same writer and queries. `__tests__/db.test.ts` replaces the op-sqlite mock with `test-utils/sqliteAdapter.ts`, an adapter over Node's built-in `node:sqlite`, so the real migrations and repository SQL run in Jest. Use that pattern for DB logic (`__tests__/sync.test.ts` covers the sync triggers, collect and apply). `lucide-react-native` is mapped to its CJS build in `jest.config.js` because the RN preset doesn't transform `.mjs` files.

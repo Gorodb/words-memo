@@ -30,6 +30,7 @@ export async function createLanguage(name: string): Promise<Language> {
     'INSERT INTO languages (code, name, created_at) VALUES (?, ?, ?)',
     [language.code, language.name, Date.now()],
   );
+  notifyChanged('languages');
   return language;
 }
 
@@ -41,6 +42,7 @@ export async function renameLanguage(
     name.trim(),
     code,
   ]);
+  notifyChanged('languages');
 }
 
 /** Deletes the language with all its folders, sets and words. */
@@ -51,7 +53,14 @@ export async function deleteLanguage(code: LanguageCode): Promise<void> {
     await tx.execute('DELETE FROM folders WHERE language_code = ?', [code]);
     await tx.execute('DELETE FROM languages WHERE code = ?', [code]);
   });
-  notifyChanged('folders', 'sets', 'folder_sets', 'words', 'rules');
+  notifyChanged(
+    'languages',
+    'folders',
+    'sets',
+    'folder_sets',
+    'words',
+    'rules',
+  );
 }
 
 /** Number of sets and words of a language, for the delete confirmation. */

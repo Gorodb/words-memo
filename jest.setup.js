@@ -82,3 +82,7 @@ jest.mock('react-native-share', () => ({
   __esModule: true,
   default: { open: jest.fn(() => Promise.resolve({ success: true })) },
 }));
+
+jest.mock('@react-native-community/netinfo', () =>
+  require('@react-native-community/netinfo/jest/netinfo-mock.js'),
+);

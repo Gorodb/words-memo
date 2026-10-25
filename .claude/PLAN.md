@@ -1,6 +1,6 @@
 # wordsLearning: plan
 
-Offline React Native app (no backend, no login) for learning English and German words (plus languages the user adds) with Russian translations.
+Offline-first React Native app for learning English and German words (plus languages the user adds) with Russian translations. An optional account (email + password) syncs the data between devices through our backend (`backend/`); without it the app works as before.
 
 ## Concepts
 
@@ -28,7 +28,7 @@ RootStack
 │  │   └─ Folder       header: [<] name, [add sets] → set picker sheet, [⋯] → Edit / Remove menu sheet
 │  ├─ SetsTab          all sets of the active language, [+] → new set sheet
 │  ├─ LanguagesTab     en / de + custom ✓ active, dictionary Download / Remove; [+] new language; long-press custom → Rename / Delete
-│  └─ SettingsTab      Theme (System/Light/Dark) · Export · Import · dictionary attribution
+│  └─ SettingsTab      Account (Sign in → sync status + Sign out) · Theme (System/Light/Dark) · Export · Import · dictionary attribution
 ├─ Set                 Words / Rules tabs (only when the set has rules); Learn / Flashcards / Study words tiles, "To learn" / "Learned" word lists; [+] word or rule sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
 ├─ Study               one session in one study mode (opens on top of the tabs)
 ├─ Flashcards          full-screen modal: [×] counter [shuffle]; swipe cards of the words to learn
@@ -112,6 +112,18 @@ Words are **not unique**: the same term can be in several sets of one language.
   - `backupFiles.ts`: save, share and pick.
   - `db/repositories/backup.ts`: export, snapshot and apply.
 
+## Account sync ✅
+
+- **Backend** (`backend/`): NestJS 12 + TypeORM 1 + PostgreSQL. Its README covers the API, protocol and schema. It is used only for accounts and sync; the app never reads from it.
+- **Account**: a unique email and a password (min. 6), no confirmation. Settings → Account → **Sign in**. If the email has no account, the app asks "Create an account …?" and registers it with the typed password. Signed in, the row shows the email and the sync state (tap to sync now), and **Sign out** replaces Sign in. The token never expires; sign out revokes it and keeps every word on the phone.
+- **Source of truth**: the phone. Its rows overwrite the server's. A pulled row is skipped when the phone changed it since its push, and a deletion from another device doesn't remove a set, folder or language that still holds local changes not pushed yet.
+- **When**:
+  - On sign in: a full sync that merges both sides by id. Nothing is deleted. Rows only on the phone go up, rows only on the server come down.
+  - After every change (debounced 1.5 s), on app foreground, when the network comes back, and as retries (5 s doubling to 5 min).
+  - Offline, changes wait in the queue. Changes made while signed out are queued too, and go up at the next sign in.
+- **Synced**: custom languages, sets, folders (order, pins), folder membership, words (learned state and order included), rules. Not synced: theme, active language, dictionaries.
+- **Website** (later): the same API and tables (`deleted = false`).
+
 ## Dictionaries
 
 Built from **Wiktionary** via kaikki.org / wiktextract (CC BY-SA 4.0). The original wikidict files were Wikipedia title pairs (no verbs, `Apfel → Апфель`) and were dropped.
@@ -183,9 +195,11 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 9. ✅ **Custom languages**: add / rename / delete languages without a dictionary; backups carry them.
 10. ✅ **Study words**: three-round game with learned marking and Continue learning.
 11. ✅ **Descriptions and rules**: Markdown description per word ("+ Add description" in the word sheet, "Description" link on the row opens a read-only sheet); rules in sets (Word | Rule switch in the new-entry sheet, Words / Rules tabs on the Set screen); both in backups.
+12. ✅ **Account sync**: NestJS backend (register / login / logout, `/sync`), triggers + sync queue in the app (migration v9), Settings → Account.
 
 ## Decisions
 
+- Sync is optional and offline-first: the phone's database is the source of truth, and the server is a copy for other devices (and a future website). A sign-in merges by id and never deletes. Signing into another account pushes this phone's words into that account too.
 - Words are not unique per language. Import fully updates every word with the same exact term.
 - Updated words stay in their current set.
 - Term matching is case-sensitive and exact.

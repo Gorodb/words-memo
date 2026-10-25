@@ -10,6 +10,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  type TextInputProps,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -46,7 +47,10 @@ export interface FormSheetOptions {
   /** Enables the "Add example" button and the removable example rows. */
   examples?: FormExamplesConfig;
   submitLabel?: string;
-  onSubmit: (result: FormResult) => void | Promise<void>;
+  /** Title of the alert shown when onSubmit throws. */
+  errorTitle?: string;
+  /** Return false to keep the sheet open. */
+  onSubmit: (result: FormResult) => unknown | Promise<unknown>;
 }
 
 export interface FormSheetVariant {
@@ -68,6 +72,24 @@ export interface FormSheetChoice {
 export interface FormSheetHandle {
   open: (options: FormSheetOptions | FormSheetChoice) => void;
 }
+
+/** Props per FormField.kind. */
+const INPUT_KINDS = {
+  email: {
+    keyboardType: 'email-address',
+    autoCapitalize: 'none',
+    autoCorrect: false,
+    autoComplete: 'email',
+    textContentType: 'emailAddress',
+  },
+  password: {
+    secureTextEntry: true,
+    autoCapitalize: 'none',
+    autoCorrect: false,
+    autoComplete: 'password',
+    textContentType: 'password',
+  },
+} satisfies Record<NonNullable<FormField['kind']>, TextInputProps>;
 
 /** Space kept free above the sheet when it's at full height. */
 const TOP_GAP = 24;
@@ -251,10 +273,17 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     }
     setBusy(true);
     try {
-      await options.onSubmit(buildResult(options.fields, values, examples));
-      sheetRef.current?.dismiss();
+      const result = await options.onSubmit(
+        buildResult(options.fields, values, examples),
+      );
+      if (result !== false) {
+        sheetRef.current?.dismiss();
+      }
     } catch (e) {
-      Alert.alert('Could not save', e instanceof Error ? e.message : String(e));
+      Alert.alert(
+        options.errorTitle ?? 'Could not save',
+        e instanceof Error ? e.message : String(e),
+      );
     } finally {
       setBusy(false);
     }
@@ -373,6 +402,7 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
                   placeholder={field.placeholder}
                   placeholderTextColor={colors.textSecondary}
                   multiline={field.multiline || field.textArea}
+                  {...(field.kind ? INPUT_KINDS[field.kind] : null)}
                   ref={(node: unknown) => {
                     inputRefs.current[field.key] =
                       (node as Focusable | null) ?? null;
