@@ -201,6 +201,28 @@ export function signInForm(options: {
   };
 }
 
+/** One share code field. A thrown error keeps the sheet open. */
+export function shareCodeForm(options: {
+  onSubmit: (code: string) => unknown | Promise<unknown>;
+}): FormSheetOptions {
+  return {
+    title: 'Import set by code',
+    submitLabel: 'Continue',
+    errorTitle: 'Could not import',
+    fields: [
+      {
+        key: 'code',
+        label: 'Code',
+        kind: 'code',
+        required: true,
+        placeholder: 'ABCD-EFGH',
+        hint: 'The code of a set someone shared with you. Each code works once, for 7 days.',
+      },
+    ],
+    onSubmit: ({ values }) => options.onSubmit(values.code),
+  };
+}
+
 /** "New word" / "New rule" in one sheet, switched with Word | Rule. */
 export function wordOrRuleForm(options: {
   word: FormSheetOptions;

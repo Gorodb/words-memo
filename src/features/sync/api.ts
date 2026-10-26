@@ -1,4 +1,5 @@
 import { SYNC_API_URL } from '../../config/sync';
+import type { BackupFile } from '../../domain/types';
 import type { SyncRequest, SyncResponse } from './protocol';
 
 /** The server answered with an error status. */
@@ -32,7 +33,12 @@ function errorMessage(body: unknown, status: number): string {
 
 async function request<T>(
   path: string,
-  options: { body?: unknown; token?: string; timeoutMs?: number } = {},
+  options: {
+    method?: 'GET' | 'POST';
+    body?: unknown;
+    token?: string;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(
@@ -42,17 +48,18 @@ async function request<T>(
   let response: Response;
   try {
     response = await fetch(SYNC_API_URL + path, {
-      method: 'POST',
+      method: options.method ?? 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(options.token && { Authorization: `Bearer ${options.token}` }),
       },
-      body: JSON.stringify(options.body ?? {}),
+      body:
+        options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
       // RN's AbortSignal type differs from the DOM one fetch is typed with.
       signal: controller.signal as RequestInit['signal'],
     });
   } catch {
-    throw new NetworkError('No connection to the sync server');
+    throw new NetworkError('No connection to the server');
   } finally {
     clearTimeout(timer);
   }
@@ -85,10 +92,36 @@ export const api = {
   /** A first sync uploads everything, so it may take a while. */
   sync: (token: string, body: SyncRequest) =>
     request<SyncResponse>('/sync', { body, token, timeoutMs: 120_000 }),
+  /** Throws ApiError with code TOO_MANY_SHARES. */
+  createShare: (token: string, payload: BackupFile) =>
+    request<ShareCreated>('/shares', { body: { payload }, token }),
+  /** Reads a shared set without using the code up. SHARE_NOT_FOUND. */
+  getShare: (code: string) =>
+    request<ShareContent>(`/shares/${code}`, { method: 'GET' }),
+  /** Uses the code up (one import per code). SHARE_NOT_FOUND. */
+  redeemShare: (code: string) =>
+    request<ShareContent>(`/shares/${code}/redeem`),
 };
+
+/** A set shared by code (see backend/src/shares). */
+export interface ShareCreated {
+  code: string;
+  /** ISO time. */
+  expiresAt: string;
+}
+
+export interface ShareContent {
+  /** Untrusted: parse it with parseBackup before use. */
+  payload: unknown;
+  expiresAt: string;
+}
 
 export const AUTH_ERRORS = {
   userNotFound: 'USER_NOT_FOUND',
   unauthorized: 'UNAUTHORIZED',
   cursorAhead: 'SYNC_CURSOR_AHEAD',
+} as const;
+
+export const SHARE_ERRORS = {
+  notFound: 'SHARE_NOT_FOUND',
 } as const;

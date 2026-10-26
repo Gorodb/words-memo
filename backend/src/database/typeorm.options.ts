@@ -8,8 +8,10 @@ import {
   SetEntity,
   WordEntity,
 } from '../sync/entities/content.entities.ts';
+import { SharedSet } from '../shares/shared-set.entity.ts';
 import { User } from '../users/user.entity.ts';
 import { Init1761400000000 } from './migrations/1761400000000-Init.ts';
+import { SharedSets1761500000000 } from './migrations/1761500000000-SharedSets.ts';
 
 export const ENTITIES = [
   User,
@@ -20,10 +22,11 @@ export const ENTITIES = [
   FolderSetEntity,
   WordEntity,
   RuleEntity,
+  SharedSet,
 ];
 
 /** Listed explicitly (no globs): ESM + file globs don't mix well. */
-export const MIGRATIONS = [Init1761400000000];
+export const MIGRATIONS = [Init1761400000000, SharedSets1761500000000];
 
 /** The schema is only changed by migrations, never by `synchronize`. */
 export function typeOrmOptions(databaseUrl: string): DataSourceOptions {

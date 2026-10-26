@@ -26,7 +26,7 @@ RootStack
 │  ├─ FoldersTab → FoldersStack
 │  │   ├─ Folders      header: "Folders · English" + [+] → new folder sheet; drag to reorder
 │  │   └─ Folder       header: [<] name, [add sets] → set picker sheet, [⋯] → Edit / Remove menu sheet
-│  ├─ SetsTab          all sets of the active language, [+] → new set sheet
+│  ├─ SetsTab          all sets of the active language, [+] → new set sheet, [⋯] → Import by code; long-press set → Pin / Rename / Share / Delete
 │  ├─ LanguagesTab     en / de + custom ✓ active, dictionary Download / Remove; [+] new language; long-press custom → Rename / Delete
 │  └─ SettingsTab      Account (Sign in → sync status + Sign out) · Theme (System/Light/Dark) · Export · Import · dictionary attribution
 ├─ Set                 Words / Rules tabs (only when the set has rules); Learn / Flashcards / Study words tiles, "To learn" / "Learned" word lists; [+] word or rule sheet, [⋯] Edit set / Select words / Study set / Study not learned / Reset progress
@@ -98,7 +98,7 @@ Words are **not unique**: the same term can be in several sets of one language.
 - **Export** (Settings → Export) offers two choices:
   - **Save to device**: the system "save as" dialog.
   - **Share**: the share sheet (Drive, Telegram, e-mail, …).
-- **Share set** (the set's ⋯ menu) sends a `kind: 'sets'` file. The other person imports it with Settings → Import.
+- **Share set** (the set's ⋯ menu → Share set → **Share as file**) sends a `kind: 'sets'` file. The other person imports it with Settings → Import. **Share code** is the other way (see Share by code).
 - **Import** (merge, never deletes). Before writing anything, the app shows a preview ("X added, Y updated, …") and asks for confirmation:
   1. Sets and folders are matched by name per language, or created. Sets listed for a folder are added to it.
   2. A word matching by exact `(language_code, term_norm)` fully replaces translation, examples and description on **every** matching word. Each one keeps its set and its learned state.
@@ -123,6 +123,16 @@ Words are **not unique**: the same term can be in several sets of one language.
   - Offline, changes wait in the queue. Changes made while signed out are queued too, and go up at the next sign in.
 - **Synced**: custom languages, sets, folders (order, pins), folder membership, words (learned state and order included), rules. Not synced: theme, active language, dictionaries.
 - **Website** (later): the same API and tables (`deleted = false`).
+
+## Share by code ✅
+
+- **Share**: the set's ⋯ menu (or long-press in the Sets tab) → Share set → **Share code**. Needs an account. The app uploads the set as a `kind: 'sets'` backup file and shows the code (`ABCD-EFGH`) with **Send code** (share sheet with a text message).
+  - The server keeps a **snapshot**: later edits to the set aren't included. Share again for a fresh code.
+  - Codes are 8 characters without look-alikes (no 0/O, 1/I/L), typed ignoring case, spaces and dashes.
+  - A code works **once** and for **7 days**. Up to 100 unused codes per account.
+- **Import**: Sets tab → ⋯ → **Import by code**. No account needed. The app reads the set behind the code (the code stays valid), shows the usual import preview, and only **Import** uses the code up (the server deletes it in the same statement that returns it). Then the normal backup merge runs. If the set's language isn't the active one, the result says where to find it.
+- **Server**: `shared_sets` table (code, owner, payload jsonb, expires_at). Expired rows stop working at once; a cleanup deletes them on server start and every 7 days.
+- **Later, website links**: `https://<site>/s/<CODE>` opens the app (Android App Links / iOS Universal Links) with the code filled in, or shows the set on the site. The API already allows reading and redeeming without an account.
 
 ## Dictionaries
 
@@ -196,6 +206,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 10. ✅ **Study words**: three-round game with learned marking and Continue learning.
 11. ✅ **Descriptions and rules**: Markdown description per word ("+ Add description" in the word sheet, "Description" link on the row opens a read-only sheet); rules in sets (Word | Rule switch in the new-entry sheet, Words / Rules tabs on the Set screen); both in backups.
 12. ✅ **Account sync**: NestJS backend (register / login / logout, `/sync`), triggers + sync queue in the app (migration v9), Settings → Account.
+13. ✅ **Share by code**: `/shares` on the backend (7-day, one-time codes, weekly cleanup), Share code in the set menus, Import by code in the Sets tab. Later: website links that open the app.
 
 ## Decisions
 

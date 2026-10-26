@@ -1,9 +1,9 @@
 import React, { useCallback, useLayoutEffect } from 'react';
-import { FlatList, StyleSheet } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Plus } from 'lucide-react-native';
+import { CircleEllipsis, Plus } from 'lucide-react-native';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { ListRow } from '../../components/ListRow';
@@ -14,7 +14,10 @@ import {
   togglePinned,
 } from '../../components/itemActions';
 import { useFormSheet } from '../../components/formSheet/FormSheet';
-import { nameForm } from '../../components/formSheet/forms';
+import {
+  nameForm,
+  shareCodeForm,
+} from '../../components/formSheet/forms';
 import {
   createSet,
   deleteSet,
@@ -27,6 +30,7 @@ import { useQuery } from '../../db/useQuery';
 import { useActiveLanguage } from '../../store/useActiveLanguage';
 import { setContents } from '../../utils/plural';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
+import { importSetByCode, shareSetMenuItems } from './shareActions';
 
 /** All sets of the active language, whether in folders or not. Pinned sets first. */
 export function SetsScreen() {
@@ -38,6 +42,7 @@ export function SetsScreen() {
   const form = useFormSheet();
   const openForm = form.open;
   const menu = useActionMenu();
+  const openMenu = menu.open;
 
   const load = useCallback(() => listSets(language.code), [language.code]);
   const { data: sets } = useQuery(load, ['sets', 'words']);
@@ -56,20 +61,46 @@ export function SetsScreen() {
     [openForm, language.code, language.name],
   );
 
+  const openSetsMenu = useCallback(
+    () =>
+      openMenu({
+        title: `${language.name} sets`,
+        items: [
+          {
+            label: 'Import by code',
+            onPress: () =>
+              openForm(
+                shareCodeForm({
+                  onSubmit: code => importSetByCode(code, language.code),
+                }),
+              ),
+          },
+        ],
+      }),
+    [openMenu, openForm, language.code, language.name],
+  );
+
   useLayoutEffect(() => {
     tabNavigation.setOptions({
       headerRight: () => (
-        <IconButton
-          icon={Plus}
-          accessibilityLabel="Create set"
-          onPress={openCreate}
-        />
+        <View style={styles.headerButtons}>
+          <IconButton
+            icon={Plus}
+            accessibilityLabel="Create set"
+            onPress={openCreate}
+          />
+          <IconButton
+            icon={CircleEllipsis}
+            accessibilityLabel="Sets actions"
+            onPress={openSetsMenu}
+          />
+        </View>
       ),
     });
-  }, [tabNavigation, openCreate]);
+  }, [tabNavigation, openCreate, openSetsMenu]);
 
   const onLongPress = (set: WordSetWithCount) =>
-    menu.open({
+    openMenu({
       title: set.name,
       items: [
         {
@@ -87,6 +118,15 @@ export function SetsScreen() {
                 onSubmit: name => renameSet(set.id, name),
               }),
             ),
+        },
+        {
+          label: 'Share',
+          disabled: set.wordCount === 0 && set.ruleCount === 0,
+          onPress: () =>
+            openMenu({
+              title: `Share "${set.name}"`,
+              items: shareSetMenuItems(set),
+            }),
         },
         {
           label: 'Delete',
@@ -144,4 +184,5 @@ export function SetsScreen() {
 
 const styles = StyleSheet.create({
   grow: { flexGrow: 1, paddingTop: 8, paddingBottom: 32 },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

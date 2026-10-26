@@ -89,6 +89,12 @@ const INPUT_KINDS = {
     autoComplete: 'password',
     textContentType: 'password',
   },
+  code: {
+    autoCapitalize: 'characters',
+    autoCorrect: false,
+    autoComplete: 'off',
+    spellCheck: false,
+  },
 } satisfies Record<NonNullable<FormField['kind']>, TextInputProps>;
 
 /** Space kept free above the sheet when it's at full height. */

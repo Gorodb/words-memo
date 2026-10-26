@@ -83,6 +83,11 @@ function schedule(delayMs: number): void {
   }, delayMs);
 }
 
+/** Bearer token of the signed-in account, for other API calls (share codes). */
+export function currentToken(): string | null {
+  return token;
+}
+
 /** Sync as soon as possible (e.g. "Sync now"). */
 export function syncNow(): void {
   schedule(0);

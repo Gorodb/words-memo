@@ -126,6 +126,9 @@ All bodies are JSON. Errors look like `{ code?, message }`, and the app branches
 | `POST /auth/logout` | bearer | 204, revokes the token |
 | `GET /auth/me` | bearer | `{id, email}` |
 | `POST /sync` | bearer, `SyncRequest` | `SyncResponse` · 409 `SYNC_CURSOR_AHEAD` · 400 `BAD_SYNC_REQUEST` · 401 `UNAUTHORIZED` |
+| `POST /shares` | bearer, `{payload}` (the app's backup file, `kind: 'sets'`, ≤ 5 MB) | 201 `{code, expiresAt}` · 400 `BAD_SHARE_PAYLOAD` · 429 `TOO_MANY_SHARES` |
+| `GET /shares/:code` | | `{payload, expiresAt}` without using the code · 404 `SHARE_NOT_FOUND` |
+| `POST /shares/:code/redeem` | | `{payload, expiresAt}` and the code is gone · 404 `SHARE_NOT_FOUND` |
 | `GET /health` | | `{ok: true}` |
 
 - **Auth**: there's no email confirmation. An email is unique (trimmed, case-insensitive) and the password is at least 6 characters. Passwords are hashed with scrypt (`node:crypto`). Tokens are 32 random bytes; only their SHA-256 is stored (`auth_tokens`). They never expire, and logout deletes them.
@@ -137,6 +140,8 @@ All bodies are JSON. Errors look like `{ code?, message }`, and the app branches
   - Deletions stay as tombstones (`deleted = true`) so other devices can pull them.
   - `SYNC_CURSOR_AHEAD` means the cursor is newer than the server's history (the DB was reset or restored). The app then runs a full sync again.
 
+- **Share codes** (`src/shares/`): a code is 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`; lookups ignore case, spaces and dashes. It stores a snapshot of the set, works once (redeem is a single `DELETE … RETURNING`) and for 7 days. One account can hold 100 unused codes. Reading and redeeming need no account, so a future website link works for anyone. Expired rows are deleted on start and every 7 days (the start-up run matters on Passenger, which idles and restarts the app).
+
 ## Schema
 
-`users`, `auth_tokens`, plus one table per synced type. Those have the primary key `(user_id, id)`, the app's columns, `version` and `deleted`, with an index on `(user_id, version)`. There are no foreign keys between the content tables: devices push in any order, and the app skips rows whose parent it doesn't have. The future website can read the same tables, filtering on `deleted = false`, and write through `/sync` or by bumping `version` the same way.
+`users`, `auth_tokens`, `shared_sets` (share codes, see above), plus one table per synced type. Those have the primary key `(user_id, id)`, the app's columns, `version` and `deleted`, with an index on `(user_id, version)`. There are no foreign keys between the content tables: devices push in any order, and the app skips rows whose parent it doesn't have. The future website can read the same tables, filtering on `deleted = false`, and write through `/sync` or by bumping `version` the same way.

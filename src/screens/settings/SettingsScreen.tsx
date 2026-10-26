@@ -21,7 +21,10 @@ import {
   saveFullBackup,
   shareFullBackup,
 } from '../../features/backup/backupFiles';
-import { describeSummary } from '../../features/backup/merge';
+import {
+  describeSummary,
+  importsAnything,
+} from '../../features/backup/merge';
 import {
   register,
   signIn,
@@ -174,12 +177,7 @@ export function SettingsScreen() {
       }
       const plan = prepareImport(backup);
       const { summary } = plan;
-      if (
-        !summary.wordsAdded &&
-        !summary.wordsUpdated &&
-        !summary.setsCreated &&
-        !summary.foldersCreated
-      ) {
+      if (!importsAnything(summary)) {
         Alert.alert('Nothing to import', describeSummary(summary));
         return;
       }

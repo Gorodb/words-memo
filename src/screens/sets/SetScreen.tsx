@@ -52,7 +52,6 @@ import {
 import { useQuery } from '../../db/useQuery';
 import { ruleTitle } from '../../domain/rules';
 import type { ID, Rule, Word } from '../../domain/types';
-import { shareSet } from '../../features/backup/backupFiles';
 import { STUDY_MODES } from '../../features/study/modes';
 import { STUDY_WORDS_COUNT } from '../../features/study/studyWords';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -60,6 +59,7 @@ import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
 import { plural } from '../../utils/plural';
 import { RuleCard } from './RuleCard';
+import { shareSetMenuItems } from './shareActions';
 import { WordRow } from './WordRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Set'>;
@@ -340,13 +340,12 @@ export function SetScreen({ navigation, route }: Props) {
         {
           label: 'Share set',
           disabled: all.length === 0 && !hasRules,
+          // Runs after this menu has closed, so it can open another one.
           onPress: () =>
-            shareSet(set.id, set.name).catch(e =>
-              Alert.alert(
-                'Could not share the set',
-                e instanceof Error ? e.message : String(e),
-              ),
-            ),
+            openMenu({
+              title: `Share "${set.name}"`,
+              items: shareSetMenuItems(set),
+            }),
         },
         {
           label: 'Select words',

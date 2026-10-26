@@ -267,6 +267,17 @@ export function planImport(
   return plan;
 }
 
+/** False when importing would change nothing. */
+export function importsAnything(summary: ImportSummary): boolean {
+  return (
+    summary.wordsAdded > 0 ||
+    summary.wordsUpdated > 0 ||
+    summary.rulesAdded > 0 ||
+    summary.setsCreated > 0 ||
+    summary.foldersCreated > 0
+  );
+}
+
 /** "12 words added, 3 updated, 1 new set" (empty parts left out). */
 export function describeSummary(summary: ImportSummary): string {
   const parts = [

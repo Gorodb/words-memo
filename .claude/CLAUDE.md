@@ -73,6 +73,11 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 - **UI**: Settings → Account. Sign in is `signInForm()`. An unknown email (`USER_NOT_FOUND`) asks to create the account. FormSheet `onSubmit` returning `false` keeps the sheet open, and `kind: 'email' | 'password'` sets keyboard, autofill and masking.
 - **Server URL**: `src/config/sync.ts` (dev `http://localhost:3000`; release needs HTTPS).
 
+## Share by code
+
+- **Server** (`backend/src/shares/`): `POST /shares` (bearer) stores a `kind: 'sets'` backup file as a snapshot in `shared_sets` and returns an 8-character code. `GET /shares/:code` reads it without using it up; `POST /shares/:code/redeem` deletes it and returns it in one statement (one use). Codes expire after 7 days (`SHARE_TTL_MS`); `SharesService` deletes expired rows on start and every 7 days. Code alphabet and normalization are in `share-code.ts`, mirrored in the app's `features/sharing/shareCode.ts`.
+- **App**: `features/sharing/shareByCode.ts` (create / fetch / redeem, parses payloads with `parseBackup`), `screens/sets/shareActions.ts` (alerts and menu items). Import previews with `getShare` and redeems only on confirm, then plans again from the redeemed data and runs the normal `runImport`.
+
 ## App icon and splash
 
 - **Icon**: `scripts/brand/artwork.ts` holds the artwork as SVG. `npm run brand` renders it with sharp into:

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module.ts';
 import { typeOrmOptions } from './database/typeorm.options.ts';
+import { SharesModule } from './shares/shares.module.ts';
 import { SyncModule } from './sync/sync.module.ts';
 
 @Controller('health')
@@ -23,6 +24,7 @@ class HealthController {
     }),
     AuthModule,
     SyncModule,
+    SharesModule,
   ],
   controllers: [HealthController],
 })
