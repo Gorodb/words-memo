@@ -93,3 +93,17 @@ test('toggle side and repeat the cards still to learn', () => {
   expect(s.history).toEqual([]);
   expect(s.termFirst).toBe(true);
 });
+
+test('edit replaces the card text and keeps the game position', () => {
+  let s = run(createFlashcards([word('1'), word('2')]), {
+    type: 'swipe',
+    learned: true,
+  });
+  const edited = { id: '2', term: 'der Apfel', translation: 'яблоко' };
+  s = run(s, { type: 'edit', card: edited });
+  expect(currentCard(s)).toEqual(edited);
+  expect(s.index).toBe(1);
+  expect(s.learned).toEqual({ '1': true, '2': false });
+  // Unknown ids are ignored.
+  expect(run(s, { type: 'edit', card: { ...edited, id: 'x' } })).toBe(s);
+});

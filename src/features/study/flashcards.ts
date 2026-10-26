@@ -31,6 +31,8 @@ export type FlashcardsAction =
   /** Shuffles the cards not answered yet. */
   | { type: 'shuffle'; random?: () => number }
   | { type: 'toggleSide' }
+  /** The word was edited during the game: show its new text. */
+  | { type: 'edit'; card: Flashcard }
   /** A new round over the cards that are still not learned. */
   | { type: 'repeat' };
 
@@ -146,6 +148,15 @@ export function flashcardsReducer(
 
     case 'toggleSide':
       return { ...state, termFirst: !state.termFirst };
+
+    case 'edit':
+      if (!state.cards[action.card.id]) {
+        return state;
+      }
+      return {
+        ...state,
+        cards: { ...state.cards, [action.card.id]: action.card },
+      };
 
     case 'repeat':
       return {

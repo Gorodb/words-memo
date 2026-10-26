@@ -22,12 +22,21 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeftRight, Shuffle, Undo2, X } from 'lucide-react-native';
+import { ArrowLeftRight, Pencil, Shuffle, Undo2, X } from 'lucide-react-native';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { TextButton } from '../../components/TextButton';
-import { listWords, setLearned } from '../../db/repositories/words';
+import { useFormSheet } from '../../components/formSheet/FormSheet';
+import { wordForm } from '../../components/formSheet/forms';
+import { DICTIONARIES } from '../../config/languages';
+import {
+  getWords,
+  listWords,
+  setLearned,
+  updateWord,
+} from '../../db/repositories/words';
 import { useQuery } from '../../db/useQuery';
 import type { ID, Word } from '../../domain/types';
 import {
@@ -40,6 +49,7 @@ import {
   type Flashcard,
   type FlashcardsAction,
 } from '../../features/study/flashcards';
+import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -96,6 +106,12 @@ function Game({
   const card = currentCard(state);
   const finished = isFinished(state);
   const total = state.order.length;
+  const { open: openForm, element: formSheet } = useFormSheet();
+  const languages = useSettingsStore(s => s.languages);
+  /** Full words behind the cards (the form edits examples too), kept fresh after edits. */
+  const [wordsById, setWordsById] = useState<Record<ID, Word>>(() =>
+    Object.fromEntries(words.map(w => [w.id, w])),
+  );
 
   // Read by callbacks that run after an animation, when `state` may be stale.
   const latest = useRef(state);
@@ -114,6 +130,42 @@ function Game({
       );
     }
     dispatchState(action);
+  };
+
+  const editCard = () => {
+    const word = card ? wordsById[card.id] : undefined;
+    if (!word) {
+      return;
+    }
+    const languageName = languages.find(
+      l => l.code === word.languageCode,
+    )?.name;
+    openForm(
+      wordForm({
+        title: 'Edit word',
+        languageCode: word.languageCode,
+        dictionaryHint: DICTIONARIES[word.languageCode]
+          ? `Download the ${
+              languageName ?? ''
+            } dictionary on the Languages tab to get suggestions.`
+          : undefined,
+        initial: word,
+        onSubmit: async input => {
+          await updateWord(word.id, input);
+          const [fresh] = await getWords([word.id]);
+          const next = fresh ?? { ...word, ...input };
+          setWordsById(prev => ({ ...prev, [next.id]: next }));
+          dispatchState({
+            type: 'edit',
+            card: {
+              id: next.id,
+              term: next.term,
+              translation: next.translation,
+            },
+          });
+        },
+      }),
+    );
   };
 
   useLayoutEffect(() => {
@@ -144,66 +196,78 @@ function Game({
   const stats = roundStats(state);
 
   return (
-    // Its own root: on iOS the screen is a native modal, outside the app's root.
-    <GestureHandlerRootView
-      style={[styles.root, { paddingBottom: 24 + insets.bottom }]}
-    >
-      <View style={styles.cardArea}>
-        {card ? (
-          <SwipeCard
-            // A new card (or the same one after Undo) starts unflipped in the middle.
-            key={`${card.id}-${state.index}-${state.termFirst}`}
-            card={card}
-            termFirst={state.termFirst}
-            onSwipe={(id, learned) => {
-              // Undo during the fly-out already moved on to another card.
-              if (currentCard(latest.current)?.id === id) {
-                dispatch({ type: 'swipe', learned });
-              }
-            }}
-          />
-        ) : (
-          <View style={styles.done}>
-            <Text style={[styles.doneTitle, { color: colors.text }]}>
-              Round finished
-            </Text>
-            <Text style={[styles.doneStats, { color: colors.textSecondary }]}>
-              {stats.learned} learned · {stats.toLearn} to learn
-            </Text>
-            <View style={styles.doneButtons}>
-              {stats.toLearn > 0 ? (
-                <TextButton
-                  title={`Repeat ${stats.toLearn} to learn`}
-                  onPress={() => dispatchState({ type: 'repeat' })}
-                />
-              ) : null}
-              <TextButton
-                title="Close"
-                variant={stats.toLearn > 0 ? 'secondary' : 'primary'}
-                onPress={() => navigation.goBack()}
+    // Its own roots: on iOS the screen is a native modal, outside the app's
+    // root, so gestures and bottom sheets need their own providers here.
+    <GestureHandlerRootView style={styles.root}>
+      <BottomSheetModalProvider>
+        <View style={[styles.root, { paddingBottom: 24 + insets.bottom }]}>
+          <View style={styles.cardArea}>
+            {card ? (
+              <SwipeCard
+                // A new card (or the same one after Undo) starts unflipped in the middle.
+                key={`${card.id}-${state.index}-${state.termFirst}`}
+                card={card}
+                termFirst={state.termFirst}
+                onSwipe={(id, learned) => {
+                  // Undo during the fly-out already moved on to another card.
+                  if (currentCard(latest.current)?.id === id) {
+                    dispatch({ type: 'swipe', learned });
+                  }
+                }}
               />
-            </View>
+            ) : (
+              <View style={styles.done}>
+                <Text style={[styles.doneTitle, { color: colors.text }]}>
+                  Round finished
+                </Text>
+                <Text
+                  style={[styles.doneStats, { color: colors.textSecondary }]}
+                >
+                  {stats.learned} learned · {stats.toLearn} to learn
+                </Text>
+                <View style={styles.doneButtons}>
+                  {stats.toLearn > 0 ? (
+                    <TextButton
+                      title={`Repeat ${stats.toLearn} to learn`}
+                      onPress={() => dispatchState({ type: 'repeat' })}
+                    />
+                  ) : null}
+                  <TextButton
+                    title="Close"
+                    variant={stats.toLearn > 0 ? 'secondary' : 'primary'}
+                    onPress={() => navigation.goBack()}
+                  />
+                </View>
+              </View>
+            )}
           </View>
-        )}
-      </View>
-      {!finished ? (
-        <Text style={[styles.legend, { color: colors.textSecondary }]}>
-          ← To learn · Learned →
-        </Text>
-      ) : null}
-      <View style={styles.controls}>
-        <ControlButton
-          icon={Undo2}
-          label="Undo"
-          disabled={state.history.length === 0}
-          onPress={() => dispatch({ type: 'undo' })}
-        />
-        <ControlButton
-          icon={ArrowLeftRight}
-          label={state.termFirst ? 'Word first' : 'Translation first'}
-          onPress={() => dispatchState({ type: 'toggleSide' })}
-        />
-      </View>
+          {!finished ? (
+            <Text style={[styles.legend, { color: colors.textSecondary }]}>
+              ← To learn · Learned →
+            </Text>
+          ) : null}
+          <View style={styles.controls}>
+            <ControlButton
+              icon={Undo2}
+              label="Undo"
+              disabled={state.history.length === 0}
+              onPress={() => dispatch({ type: 'undo' })}
+            />
+            <ControlButton
+              icon={Pencil}
+              label="Edit"
+              disabled={!card}
+              onPress={editCard}
+            />
+            <ControlButton
+              icon={ArrowLeftRight}
+              label={state.termFirst ? 'Word first' : 'Translation first'}
+              onPress={() => dispatchState({ type: 'toggleSide' })}
+            />
+          </View>
+        </View>
+        {formSheet}
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }
@@ -442,7 +506,7 @@ const styles = StyleSheet.create({
   badgeRight: { right: 20, transform: [{ rotate: '12deg' }] },
   badgeText: { fontSize: 16, fontWeight: '700', textTransform: 'uppercase' },
   legend: { textAlign: 'center', fontSize: 13, marginBottom: 16 },
-  controls: { flexDirection: 'row', justifyContent: 'center', gap: 48 },
+  controls: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
   control: { alignItems: 'center', gap: 6, minWidth: 96 },
   controlIcon: {
     width: 52,

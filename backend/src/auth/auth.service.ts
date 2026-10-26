@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { User } from '../users/user.entity.ts';
@@ -42,7 +43,11 @@ export class AuthService {
     let user: User;
     try {
       user = await this.users.save(
-        this.users.create({ email: normalized, passwordHash }),
+        this.users.create({
+          id: randomUUID(),
+          email: normalized,
+          passwordHash,
+        }),
       );
     } catch (e) {
       if (
@@ -95,7 +100,11 @@ export class AuthService {
 
   private async startSession(user: User): Promise<AuthResponse> {
     const { token, hash } = newToken();
-    await this.tokens.insert({ userId: user.id, tokenHash: hash });
+    await this.tokens.insert({
+      id: randomUUID(),
+      userId: user.id,
+      tokenHash: hash,
+    });
     return { token, user: { id: user.id, email: user.email } };
   }
 }

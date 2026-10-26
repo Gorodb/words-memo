@@ -33,8 +33,6 @@ export function typeOrmOptions(databaseUrl: string): DataSourceOptions {
     entities: ENTITIES,
     migrations: MIGRATIONS,
     migrationsRun: true,
-    // gen_random_uuid() is built into Postgres 13+, unlike uuid-ossp.
-    uuidExtension: 'pgcrypto',
     synchronize: false,
   };
 }
