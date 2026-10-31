@@ -10,7 +10,7 @@
  */
 export const SYNC_API_URL = __DEV__
   ? 'http://localhost:3000'
-  : 'https://api.ramis-vakazov-cv.ru';
+  : 'https://api.recallico.com';
 
 /** Wait after a local change before pushing it, to batch quick edits. */
 export const SYNC_DEBOUNCE_MS = 1500;
