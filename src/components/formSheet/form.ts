@@ -45,6 +45,11 @@ export interface FormField {
   addLabel?: string;
   /** Dropdown with suggestions below the input while it's focused. */
   suggestions?: FormFieldSuggestions;
+  /**
+   * Called (debounced) with the field's text on open and on every change. A
+   * returned text shows as a warning below the input; it never blocks Save.
+   */
+  check?: (text: string) => Promise<string | null>;
 }
 
 export interface FormExamplesConfig {

@@ -152,6 +152,8 @@ Built from **Wiktionary** via kaikki.org / wiktextract (CC BY-SA 4.0). The origi
 - **In the word sheet**:
   - The word field suggests entries, and picking one fills in the full forms.
   - The translation field then suggests that entry's Russian glosses. You can still type freely.
+  - The word field warns (never blocks) when the language already has the same word (main form, ignoring case and `der/die/das/to`) or, with the dictionary, another form of the same entry (`isst` ↔ `essen`, `went` ↔ `go`). Logic: `features/similarWords/similarWords.ts`.
+- **No CEFR levels** (A1…C2): neither Wiktionary dump has them (checked 2026-11). Showing levels needs a separate word list as a source; the open ones are limited (Goethe and Oxford lists are copyrighted).
 
 ## Study modes
 
@@ -207,6 +209,8 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 11. ✅ **Descriptions and rules**: Markdown description per word ("+ Add description" in the word sheet, "Description" link on the row opens a read-only sheet); rules in sets (Word | Rule switch in the new-entry sheet, Words / Rules tabs on the Set screen); both in backups.
 12. ✅ **Account sync**: NestJS backend (register / login / logout, `/sync`), triggers + sync queue in the app (migration v9), Settings → Account.
 13. ✅ **Share by code**: `/shares` on the backend (7-day, one-time codes, weekly cleanup), Share code in the set menus, Import by code in the Sets tab. Later: website links that open the app.
+14. ✅ **Pronunciation**: speaker button under Learned on word rows and on the word side of flashcards; system text-to-speech (offline), English and German only (custom languages have no voice locale). Without an installed voice it asks to install one.
+15. ✅ **Duplicate warning**: the word sheet warns about the same or a related word (another form of the same dictionary entry) already added in the language, naming its set.
 
 ## Decisions
 

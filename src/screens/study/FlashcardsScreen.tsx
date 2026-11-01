@@ -24,7 +24,14 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeftRight, Pencil, Shuffle, Undo2, X } from 'lucide-react-native';
+import {
+  ArrowLeftRight,
+  Pencil,
+  Shuffle,
+  Undo2,
+  Volume2,
+  X,
+} from 'lucide-react-native';
 import { EmptyState } from '../../components/EmptyState';
 import { IconButton } from '../../components/IconButton';
 import { TextButton } from '../../components/TextButton';
@@ -38,7 +45,7 @@ import {
   updateWord,
 } from '../../db/repositories/words';
 import { useQuery } from '../../db/useQuery';
-import type { ID, Word } from '../../domain/types';
+import type { ID, LanguageCode, Word } from '../../domain/types';
 import {
   createFlashcards,
   currentCard,
@@ -49,6 +56,11 @@ import {
   type Flashcard,
   type FlashcardsAction,
 } from '../../features/study/flashcards';
+import {
+  speakTerm,
+  speechLocale,
+  stopSpeaking,
+} from '../../features/speech/speech';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import type { RootStackParamList } from '../../navigation/types';
@@ -69,6 +81,8 @@ export function FlashcardsScreen({ navigation, route }: Props) {
   );
   // Loaded once: the game is a snapshot of the words, and swipes write to them.
   const { data: words } = useQuery(load, []);
+
+  useEffect(() => stopSpeaking, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -150,6 +164,7 @@ function Game({
             } dictionary on the Languages tab to get suggestions.`
           : undefined,
         initial: word,
+        wordId: word?.id,
         onSubmit: async input => {
           await updateWord(word.id, input);
           const [fresh] = await getWords([word.id]);
@@ -208,6 +223,7 @@ function Game({
                 key={`${card.id}-${state.index}-${state.termFirst}`}
                 card={card}
                 termFirst={state.termFirst}
+                languageCode={wordsById[card.id]?.languageCode}
                 onSwipe={(id, learned) => {
                   // Undo during the fly-out already moved on to another card.
                   if (currentCard(latest.current)?.id === id) {
@@ -279,10 +295,13 @@ function Game({
 function SwipeCard({
   card,
   termFirst,
+  languageCode,
   onSwipe,
 }: {
   card: Flashcard;
   termFirst: boolean;
+  /** The word's language: picks the voice (none for custom languages). */
+  languageCode: LanguageCode | undefined;
   onSwipe: (id: ID, learned: boolean) => void;
 }) {
   const { colors } = useAppTheme();
@@ -325,9 +344,21 @@ function SwipeCard({
         x.value = withSpring(0);
       }
     });
-  const tap = Gesture.Tap().onEnd(() => {
-    scheduleOnRN(toggle);
+  const canSpeak = !!languageCode && speechLocale(languageCode) !== null;
+  const speak = () => {
+    if (languageCode) {
+      speakTerm(card.term, languageCode);
+    }
+  };
+  // The speaker sits on the card: its tap must not flip the card too.
+  const speakTap = Gesture.Tap().onEnd(() => {
+    scheduleOnRN(speak);
   });
+  const tap = Gesture.Tap()
+    .requireExternalGestureToFail(speakTap)
+    .onEnd(() => {
+      scheduleOnRN(toggle);
+    });
   const gesture = Gesture.Race(pan, tap);
 
   const moveStyle = useAnimatedStyle(() => ({
@@ -360,6 +391,14 @@ function SwipeCard({
     styles.face,
     { backgroundColor: colors.surface, borderColor: colors.border },
   ];
+  // Only on the side that shows the word, never the translation.
+  const speaker = canSpeak ? (
+    <GestureDetector gesture={speakTap}>
+      <View style={styles.speaker}>
+        <Volume2 color={colors.primary} size={28} />
+      </View>
+    </GestureDetector>
+  ) : null;
 
   return (
     <GestureDetector gesture={gesture}>
@@ -375,6 +414,7 @@ function SwipeCard({
           { name: 'activate', label: 'Flip' },
           { name: 'learned', label: 'Learned' },
           { name: 'toLearn', label: 'To learn' },
+          ...(canSpeak ? [{ name: 'pronounce', label: 'Pronounce' }] : []),
         ]}
         onAccessibilityAction={e => {
           const name = e.nativeEvent.actionName;
@@ -382,20 +422,31 @@ function SwipeCard({
             toggle();
           } else if (name === 'learned' || name === 'toLearn') {
             flyOut(name === 'learned');
+          } else if (name === 'pronounce') {
+            speak();
           }
         }}
       >
-        <Animated.View style={[face, frontStyle]}>
+        {/* The hidden face stays stacked on top: it must not take the speaker's taps. */}
+        <Animated.View
+          pointerEvents={flipped ? 'none' : 'auto'}
+          style={[face, frontStyle]}
+        >
           <Text style={[styles.side, { color: colors.textSecondary }]}>
             {termFirst ? 'Word' : 'Translation'}
           </Text>
           <Text style={[styles.text, { color: colors.text }]}>{front}</Text>
+          {termFirst ? speaker : null}
         </Animated.View>
-        <Animated.View style={[face, backStyle]}>
+        <Animated.View
+          pointerEvents={flipped ? 'auto' : 'none'}
+          style={[face, backStyle]}
+        >
           <Text style={[styles.side, { color: colors.textSecondary }]}>
             {termFirst ? 'Translation' : 'Word'}
           </Text>
           <Text style={[styles.text, { color: colors.primary }]}>{back}</Text>
+          {termFirst ? null : speaker}
         </Animated.View>
         <Animated.View
           pointerEvents="none"
@@ -494,6 +545,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   text: { fontSize: 26, fontWeight: '600', textAlign: 'center' },
+  speaker: { position: 'absolute', bottom: 12, padding: 12 },
   badge: {
     position: 'absolute',
     top: 20,

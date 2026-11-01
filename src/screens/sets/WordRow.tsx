@@ -9,9 +9,12 @@ import {
   FileText,
   Square,
   SquareCheck,
+  Volume2,
 } from 'lucide-react-native';
+import { IconButton } from '../../components/IconButton';
 import { TextButton } from '../../components/TextButton';
 import type { Word } from '../../domain/types';
+import { speakTerm, speechLocale } from '../../features/speech/speech';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
 interface Props {
@@ -34,7 +37,8 @@ const ACTION_WIDTH = 80;
 /**
  * Swipe left → Edit / Delete. Tap (or "Show examples") → expand examples.
  * "Description" opens the word's Markdown description in a sheet.
- * "Learned" / "To revise" at the end of the row.
+ * "Learned" / "To revise" at the end of the row, with the speaker under it
+ * (bundled languages only: custom ones have no voice locale).
  */
 export function WordRow({
   word,
@@ -184,11 +188,23 @@ export function WordRow({
           ) : null}
         </View>
         {selection ? null : (
-          <TextButton
-            title={learned ? 'To revise' : 'Learned'}
-            variant={learned ? 'secondary' : 'primary'}
-            onPress={onToggleLearned}
-          />
+          <View style={styles.side}>
+            <TextButton
+              title={learned ? 'To revise' : 'Learned'}
+              variant={learned ? 'secondary' : 'primary'}
+              onPress={onToggleLearned}
+            />
+            {speechLocale(word.languageCode) ? (
+              <View style={styles.speaker}>
+                <IconButton
+                  icon={Volume2}
+                  size={20}
+                  accessibilityLabel={`Pronounce ${word.term}`}
+                  onPress={() => speakTerm(word.term, word.languageCode)}
+                />
+              </View>
+            ) : null}
+          </View>
         )}
       </Pressable>
     </ReanimatedSwipeable>
@@ -213,6 +229,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   text: { flex: 1, paddingTop: 2 },
+  side: { alignItems: 'flex-end' },
+  // Lines the icon up with the button's text (its padding is 12, the icon's 4).
+  speaker: { marginRight: 8 },
   term: { fontSize: 16, fontWeight: '500' },
   translation: { fontSize: 14, marginTop: 2 },
   examples: { marginTop: 8, gap: 8 },

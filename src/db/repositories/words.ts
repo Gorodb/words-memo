@@ -1,6 +1,13 @@
 import type { Scalar } from '@op-engineering/op-sqlite';
 import { normalizeTerm } from '../../domain/term';
-import type { Example, ID, Word, WordInput } from '../../domain/types';
+import type {
+  Example,
+  ID,
+  LanguageCode,
+  Word,
+  WordInput,
+} from '../../domain/types';
+import type { KnownWord } from '../../features/similarWords/similarWords';
 import { createId } from '../../utils/id';
 import { notifyChanged } from '../changes';
 import { getDb } from '../database';
@@ -73,6 +80,23 @@ export async function getWords(ids: ID[]): Promise<Word[]> {
   );
   const byId = new Map(rows.map(row => [row.id as string, toWord(row)]));
   return ids.flatMap(id => byId.get(id) ?? []);
+}
+
+/** Every word of a language with its set's name, to spot duplicates. */
+export async function listLanguageTerms(
+  languageCode: LanguageCode,
+): Promise<KnownWord[]> {
+  const { rows } = await getDb().execute(
+    `SELECT w.id, w.term, s.name AS set_name
+     FROM words w JOIN sets s ON s.id = w.set_id
+     WHERE w.language_code = ?`,
+    [languageCode],
+  );
+  return rows.map(row => ({
+    id: row.id as string,
+    term: row.term as string,
+    setName: row.set_name as string,
+  }));
 }
 
 /** The word inherits the language of its set. */

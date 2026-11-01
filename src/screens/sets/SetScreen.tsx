@@ -157,6 +157,7 @@ export function SetScreen({ navigation, route }: Props) {
             } dictionary on the Languages tab to get suggestions.`
           : undefined,
         initial: word,
+        wordId: word?.id,
         onSubmit: async input => {
           if (word) {
             await updateWord(word.id, input);

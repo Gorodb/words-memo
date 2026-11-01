@@ -23,7 +23,7 @@ import {
   type BottomSheetScrollViewMethods,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleMinus } from 'lucide-react-native';
+import { CircleMinus, TriangleAlert } from 'lucide-react-native';
 import { useAppTheme } from '../../theme/ThemeProvider';
 import { useKeyboardHeight } from '../../utils/useKeyboardHeight';
 import { IconButton } from '../IconButton';
@@ -100,6 +100,7 @@ const INPUT_KINDS = {
 /** Space kept free above the sheet when it's at full height. */
 const TOP_GAP = 24;
 const SUGGEST_DEBOUNCE_MS = 200;
+const CHECK_DEBOUNCE_MS = 300;
 const MAX_SUGGESTIONS = 6;
 
 /** BottomSheetTextInput's ref type is the gesture-handler component; we only need focus(). */
@@ -152,6 +153,8 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     fieldKey: string;
     items: FormSuggestion[];
   } | null>(null);
+  /** Results of FormField.check, by field key. */
+  const [warnings, setWarnings] = useState<Record<string, string | null>>({});
 
   const fields = options?.fields ?? [];
 
@@ -178,6 +181,7 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
     setBusy(false);
     setFocusedKey(null);
     setSuggestions(null);
+    setWarnings({});
     setFormKey(k => k + 1);
   };
 
@@ -250,6 +254,32 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
       clearTimeout(timer);
     };
   }, [focusedField, focusedText]);
+
+  // Warnings of the fields with a check, re-run (debounced) when their text changes.
+  const checkedText = fields
+    .filter(f => f.check)
+    .map(f => `${f.key}=${values[f.key] ?? ''}`)
+    .join('\n');
+  useEffect(() => {
+    const checked = (options?.fields ?? []).filter(f => f.check);
+    if (checked.length === 0) {
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      for (const field of checked) {
+        field.check!(valuesRef.current[field.key] ?? '').then(
+          warning =>
+            active && setWarnings(prev => ({ ...prev, [field.key]: warning })),
+          () => active && setWarnings(prev => ({ ...prev, [field.key]: null })),
+        );
+      }
+    }, CHECK_DEBOUNCE_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [options, checkedText]);
 
   const pickSuggestion = (field: FormField, item: FormSuggestion) => {
     const updates = field.suggestions?.onPick(item, valuesRef.current) ?? {};
@@ -468,6 +498,17 @@ export function FormSheet({ ref }: { ref: React.Ref<FormSheetHandle> }) {
                     ))}
                   </View>
                 ) : null}
+                {warnings[field.key] ? (
+                  <View style={styles.warning}>
+                    <TriangleAlert size={14} color={colors.warning} />
+                    <Text
+                      accessibilityRole="alert"
+                      style={[styles.warningText, { color: colors.warning }]}
+                    >
+                      {warnings[field.key]}
+                    </Text>
+                  </View>
+                ) : null}
                 {field.hint ? (
                   <Text style={[styles.hint, { color: colors.textSecondary }]}>
                     {field.hint}
@@ -605,6 +646,8 @@ const styles = StyleSheet.create({
   field: { marginBottom: 12 },
   label: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
   hint: { fontSize: 12, marginTop: 4 },
+  warning: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  warningText: { flex: 1, fontSize: 13 },
   input: {
     fontSize: 16,
     borderWidth: StyleSheet.hairlineWidth,

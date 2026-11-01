@@ -6,6 +6,8 @@ export interface AppColors {
   primary: string;
   border: string;
   danger: string;
+  /** Non-blocking notices, e.g. a word that is already added. */
+  warning: string;
 }
 
 export const lightColors: AppColors = {
@@ -16,6 +18,7 @@ export const lightColors: AppColors = {
   primary: '#3B6FE0',
   border: '#E1E5EA',
   danger: '#D93F3F',
+  warning: '#A86500',
 };
 
 export const darkColors: AppColors = {
@@ -26,4 +29,5 @@ export const darkColors: AppColors = {
   primary: '#6E97F5',
   border: '#2A2F37',
   danger: '#F06A6A',
+  warning: '#F0B357',
 };

@@ -86,3 +86,7 @@ jest.mock('react-native-share', () => ({
 jest.mock('@react-native-community/netinfo', () =>
   require('@react-native-community/netinfo/jest/netinfo-mock.js'),
 );
+
+jest.mock('@mhpdev/react-native-speech', () =>
+  require('@mhpdev/react-native-speech/jest'),
+);

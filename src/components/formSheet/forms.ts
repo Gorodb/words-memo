@@ -1,10 +1,23 @@
-import type { LanguageCode, RuleInput, WordInput } from '../../domain/types';
+import { listLanguageTerms } from '../../db/repositories/words';
+import type {
+  ID,
+  LanguageCode,
+  RuleInput,
+  WordInput,
+} from '../../domain/types';
 import {
+  entryIdsFor,
   exactEntries,
   suggestEntries,
 } from '../../features/dictionary/dictionary';
 import { isDictionaryInstalled } from '../../features/dictionary/dictionaryStore';
 import type { DictionaryEntry } from '../../features/dictionary/queries';
+import {
+  findSimilar,
+  similarWarning,
+  wordKey,
+  type KnownWord,
+} from '../../features/similarWords/similarWords';
 import type { FormSuggestion } from './form';
 import type { FormSheetChoice, FormSheetOptions } from './FormSheet';
 
@@ -42,6 +55,8 @@ const MAX_GLOSSES = 6;
  * With the language's dictionary installed, the word field suggests entries
  * with their forms ("der Apfel, die Äpfel") and the translation field
  * suggests the entry's Russian translations.
+ * The word field warns when the language already has the same word, or
+ * (with the dictionary) another form of it ("isst" → "essen").
  */
 export function wordForm(options: {
   title: string;
@@ -49,6 +64,8 @@ export function wordForm(options: {
   /** Shown under the word field when the dictionary isn't installed. */
   dictionaryHint?: string;
   initial?: WordInput;
+  /** The edited word, left out of the duplicate check. */
+  wordId?: ID;
   onSubmit: (word: WordInput) => void | Promise<void>;
 }): FormSheetOptions {
   const { languageCode } = options;
@@ -72,6 +89,38 @@ export function wordForm(options: {
       title: e.display,
       subtitle: e.glosses.slice(0, 2).join('; '),
     }));
+  };
+
+  /** The language's words and their dictionary entries, loaded on the first check. */
+  let known: Promise<{
+    words: KnownWord[];
+    entries: Map<string, number[]>;
+  }> | null = null;
+  const loadKnown = async () => {
+    const words = await listLanguageTerms(languageCode);
+    const entries = installed
+      ? await entryIdsFor(
+          languageCode,
+          words.map(w => wordKey(w.term)),
+        )
+      : new Map<string, number[]>();
+    return { words, entries };
+  };
+
+  const checkTerm = async (text: string): Promise<string | null> => {
+    const key = wordKey(text);
+    if (!key) {
+      return null;
+    }
+    known ??= loadKnown();
+    const { words, entries } = await known;
+    if (installed && !entries.has(key)) {
+      const typed = await entryIdsFor(languageCode, [key]);
+      entries.set(key, typed.get(key) ?? []);
+    }
+    return similarWarning(
+      findSimilar(text, words, k => entries.get(k) ?? [], options.wordId),
+    );
   };
 
   const translationSuggestions = async (
@@ -102,6 +151,7 @@ export function wordForm(options: {
         initialValue: options.initial?.term,
         required: true,
         hint: installed ? undefined : options.dictionaryHint,
+        check: checkTerm,
         suggestions: {
           load: termSuggestions,
           onPick: suggestion => {

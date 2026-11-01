@@ -15,6 +15,7 @@ import {
 } from '../scripts/dictionary/format';
 import { writeEntries } from '../scripts/dictionary/schema';
 import {
+  entryIdsByKey,
   findExact,
   mainForm,
   searchEntries,
@@ -69,7 +70,9 @@ describe('display forms', () => {
   });
 
   test('German verbs get principal parts with the right auxiliary', () => {
-    expect(display('de', 'essen', 'verb')).toBe('essen, isst, aß, hat gegessen');
+    expect(display('de', 'essen', 'verb')).toBe(
+      'essen, isst, aß, hat gegessen',
+    );
     expect(display('de', 'gehen', 'verb')).toBe(
       'gehen, geht, ging, ist gegangen',
     );
@@ -124,6 +127,16 @@ describe('lookup', () => {
     expect(mainForm('essen, isst, aß, hat gegessen')).toBe('essen');
     const [entry] = await findExact(de, 'der Apfel, die Äpfel');
     expect(entry.glosses[0]).toBe('яблоко');
+  });
+
+  test('entry ids by lemma or form key', async () => {
+    const ids = await entryIdsByKey(de, ['isst', 'essen', 'gegessen', 'zzz']);
+    const [essen] = await findExact(de, 'essen');
+    expect(ids.get('isst')).toContain(essen.id);
+    expect(ids.get('gegessen')).toContain(essen.id);
+    expect(ids.get('essen')).toContain(essen.id);
+    expect(ids.has('zzz')).toBe(false);
+    expect((await entryIdsByKey(en, ['went'])).get('went')).toHaveLength(1);
   });
 
   test('search keys', () => {

@@ -2,6 +2,7 @@ import { open, type DB } from '@op-engineering/op-sqlite';
 import { DocumentDirectoryPath } from '@dr.pogodin/react-native-fs';
 import type { LanguageCode } from '../../domain/types';
 import {
+  entryIdsByKey,
   findExact,
   getEntry,
   searchEntries,
@@ -56,4 +57,11 @@ export function exactEntries(
   term: string,
 ): Promise<DictionaryEntry[]> {
   return findExact(openDictionary(language), term);
+}
+
+export function entryIdsFor(
+  language: LanguageCode,
+  keys: string[],
+): Promise<Map<string, number[]>> {
+  return entryIdsByKey(openDictionary(language), keys);
 }

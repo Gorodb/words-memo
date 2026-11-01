@@ -99,3 +99,32 @@ export function mainForm(term: string): string {
     .replace(/^(der|die|das)\s+/i, '')
     .trim();
 }
+
+/** SQLite's default limit on bound parameters is far above this. */
+const KEY_CHUNK = 500;
+
+/**
+ * Entry ids of every entry that has one of the keys as its lemma or a form:
+ * "isst" → [essen], "went" → [go]. Keys that match nothing are left out.
+ */
+export async function entryIdsByKey(
+  db: DictionaryDb,
+  keys: string[],
+): Promise<Map<string, number[]>> {
+  const result = new Map<string, number[]>();
+  const unique = [...new Set(keys.filter(Boolean))];
+  for (let i = 0; i < unique.length; i += KEY_CHUNK) {
+    const chunk = unique.slice(i, i + KEY_CHUNK);
+    const { rows } = await db.execute(
+      `SELECT DISTINCT key, entry_id FROM keys WHERE key IN (${chunk
+        .map(() => '?')
+        .join(', ')})`,
+      chunk,
+    );
+    for (const row of rows) {
+      const key = row.key as string;
+      result.set(key, [...(result.get(key) ?? []), row.entry_id as number]);
+    }
+  }
+  return result;
+}

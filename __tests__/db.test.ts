@@ -37,6 +37,7 @@ import {
   createWord,
   deleteWord,
   getWords,
+  listLanguageTerms,
   listWords,
   parseExamples,
   resetLearned,
@@ -194,6 +195,29 @@ test('words: create, update, delete; term_norm is case-sensitive', async () => {
 
   await deleteWord(word.id);
   expect(await listWords(set.id)).toHaveLength(1);
+});
+
+test('language terms list every word of the language with its set name', async () => {
+  const set = await createSet('de', 'Duplicates');
+  const word = await createWord(set.id, {
+    term: 'der Hund',
+    translation: 'собака',
+    examples: [],
+  });
+  const english = await createSet('en', 'Other language');
+  await createWord(english.id, {
+    term: 'dog',
+    translation: 'собака',
+    examples: [],
+  });
+
+  const terms = await listLanguageTerms('de');
+  expect(terms).toContainEqual({
+    id: word.id,
+    term: 'der Hund',
+    setName: 'Duplicates',
+  });
+  expect(terms.map(t => t.term)).not.toContain('dog');
 });
 
 test('learned words go below; toggling moves a word to the top of its part', async () => {
