@@ -1,0 +1,327 @@
+// Copied from the app (src/features/backup/merge.ts); keep both in step.
+/**
+ * Import as a pure plan: (what is in the DB, backup) → operations + summary.
+ * Rules (.claude/PLAN.md → Backup):
+ * - never deletes anything;
+ * - sets and folders are matched by name (per language) or created;
+ * - a word matching an existing word by (language, term_norm) fully replaces
+ *   translation, examples and description on EVERY matching word, which stay
+ *   in their sets;
+ * - other words are added to their set from the backup;
+ * - rules are added to their set unless it already has one with the same text;
+ * - a custom language (it has a name in the file) is matched by code, then
+ *   by name among the custom languages, or created.
+ */
+import { findLanguageByName } from './languages.ts';
+import { normalizeTerm } from './term.ts';
+import type {
+  BackupFile,
+  Example,
+  ID,
+  Language,
+  LanguageCode,
+  Timestamp,
+} from './types.ts';
+
+export interface ExistingLanguage {
+  sets: Array<{ id: ID; name: string }>;
+  folders: Array<{ id: ID; name: string; setIds: ID[] }>;
+  /** Existing word ids by term_norm. */
+  wordIdsByTerm: Map<string, ID[]>;
+  /** Texts of the existing rules, by set id. */
+  ruleTextsBySet: Map<ID, string[]>;
+}
+
+export interface ImportPlan {
+  createLanguages: Array<{ code: LanguageCode; name: string }>;
+  createSets: Array<{
+    id: ID;
+    languageCode: LanguageCode;
+    name: string;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+  }>;
+  createFolders: Array<{
+    id: ID;
+    languageCode: LanguageCode;
+    name: string;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+  }>;
+  addToFolder: Array<{ folderId: ID; setId: ID }>;
+  updateWords: Array<{
+    id: ID;
+    translation: string;
+    examples: Example[];
+    description: string;
+  }>;
+  insertWords: Array<{
+    id: ID;
+    setId: ID;
+    languageCode: LanguageCode;
+    term: string;
+    termNorm: string;
+    translation: string;
+    examples: Example[];
+    description: string;
+    learnedAt: Timestamp | null;
+    favoriteAt: Timestamp | null;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+  }>;
+  insertRules: Array<{
+    id: ID;
+    setId: ID;
+    languageCode: LanguageCode;
+    title: string;
+    text: string;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+  }>;
+  summary: ImportSummary;
+}
+
+export interface ImportSummary {
+  wordsAdded: number;
+  wordsUpdated: number;
+  rulesAdded: number;
+  setsCreated: number;
+  foldersCreated: number;
+  /** Names of the custom languages that will be created. */
+  languagesCreated: string[];
+  /** Languages in the file that this app doesn't have; their data is skipped. */
+  skippedLanguages: LanguageCode[];
+}
+
+export function planImport(
+  backup: BackupFile,
+  existing: (languageCode: LanguageCode) => ExistingLanguage,
+  knownLanguages: Language[],
+  createId: () => ID,
+): ImportPlan {
+  const plan: ImportPlan = {
+    createLanguages: [],
+    createSets: [],
+    createFolders: [],
+    addToFolder: [],
+    updateWords: [],
+    insertWords: [],
+    insertRules: [],
+    summary: {
+      wordsAdded: 0,
+      wordsUpdated: 0,
+      rulesAdded: 0,
+      setsCreated: 0,
+      foldersCreated: 0,
+      languagesCreated: [],
+      skippedLanguages: [],
+    },
+  };
+  /** Count each existing word once, even if several backup words match it. */
+  const updatedIds = new Set<ID>();
+
+  const languages = [...knownLanguages];
+  /** The local language for a language of the file; null = skip it. */
+  const resolveLanguage = (code: LanguageCode, name?: string) => {
+    if (languages.some(l => l.code === code)) {
+      return code;
+    }
+    if (!name) {
+      return null;
+    }
+    const sameName = findLanguageByName(
+      languages.filter(l => l.custom),
+      name,
+    );
+    if (sameName) {
+      return sameName.code;
+    }
+    languages.push({ code, name, nativeName: name, custom: true });
+    plan.createLanguages.push({ code, name });
+    plan.summary.languagesCreated.push(name);
+    return code;
+  };
+
+  for (const fileLanguage of backup.languages) {
+    const code = resolveLanguage(fileLanguage.code, fileLanguage.name);
+    if (!code) {
+      if (!plan.summary.skippedLanguages.includes(fileLanguage.code)) {
+        plan.summary.skippedLanguages.push(fileLanguage.code);
+      }
+      continue;
+    }
+    const language = { ...fileLanguage, code };
+    const current = existing(language.code);
+    const setIdByName = new Map<string, ID>();
+    for (const set of current.sets) {
+      if (!setIdByName.has(set.name)) {
+        setIdByName.set(set.name, set.id);
+      }
+    }
+
+    const setIdFor = (
+      name: string,
+      createdAt: Timestamp,
+      updatedAt: Timestamp,
+    ): ID => {
+      let id = setIdByName.get(name);
+      if (!id) {
+        id = createId();
+        setIdByName.set(name, id);
+        plan.createSets.push({
+          id,
+          languageCode: language.code,
+          name,
+          createdAt,
+          updatedAt,
+        });
+        plan.summary.setsCreated++;
+      }
+      return id;
+    };
+
+    for (const set of language.sets) {
+      const setId = setIdFor(set.name, set.createdAt, set.updatedAt);
+      for (const word of set.words) {
+        const termNorm = normalizeTerm(word.term);
+        const matches = current.wordIdsByTerm.get(termNorm);
+        if (matches?.length) {
+          for (const id of matches) {
+            // A later duplicate in the backup wins (it replaces the update).
+            const at = plan.updateWords.findIndex(u => u.id === id);
+            const update = {
+              id,
+              translation: word.translation,
+              examples: word.examples,
+              description: word.description,
+            };
+            if (at >= 0) {
+              plan.updateWords[at] = update;
+            } else {
+              plan.updateWords.push(update);
+            }
+            updatedIds.add(id);
+          }
+        } else {
+          plan.insertWords.push({
+            id: createId(),
+            setId,
+            languageCode: language.code,
+            term: word.term,
+            termNorm,
+            translation: word.translation,
+            examples: word.examples,
+            description: word.description,
+            learnedAt: word.learnedAt,
+            favoriteAt: word.favoriteAt,
+            createdAt: word.createdAt,
+            updatedAt: word.updatedAt,
+          });
+        }
+      }
+      // Same text in the same set = the same rule (also within the file).
+      const texts = current.ruleTextsBySet.get(setId) ?? [];
+      current.ruleTextsBySet.set(setId, texts);
+      for (const rule of set.rules) {
+        if (texts.includes(rule.text)) {
+          continue;
+        }
+        texts.push(rule.text);
+        plan.insertRules.push({
+          id: createId(),
+          setId,
+          languageCode: language.code,
+          title: rule.title,
+          text: rule.text,
+          createdAt: rule.createdAt,
+          updatedAt: rule.updatedAt,
+        });
+      }
+    }
+
+    const folderByName = new Map(current.folders.map(f => [f.name, f]));
+    for (const folder of language.folders) {
+      let target = folderByName.get(folder.name);
+      if (!target) {
+        target = { id: createId(), name: folder.name, setIds: [] };
+        folderByName.set(folder.name, target);
+        plan.createFolders.push({
+          id: target.id,
+          languageCode: language.code,
+          name: folder.name,
+          createdAt: folder.createdAt,
+          updatedAt: folder.updatedAt,
+        });
+        plan.summary.foldersCreated++;
+      }
+      for (const setName of folder.setNames) {
+        const setId = setIdFor(setName, folder.createdAt, folder.updatedAt);
+        if (!target.setIds.includes(setId)) {
+          target.setIds.push(setId);
+          plan.addToFolder.push({ folderId: target.id, setId });
+        }
+      }
+    }
+  }
+
+  plan.summary.wordsAdded = plan.insertWords.length;
+  plan.summary.wordsUpdated = updatedIds.size;
+  plan.summary.rulesAdded = plan.insertRules.length;
+  return plan;
+}
+
+/** False when importing would change nothing. */
+export function importsAnything(summary: ImportSummary): boolean {
+  return (
+    summary.wordsAdded > 0 ||
+    summary.wordsUpdated > 0 ||
+    summary.rulesAdded > 0 ||
+    summary.setsCreated > 0 ||
+    summary.foldersCreated > 0
+  );
+}
+
+/** "12 words added, 3 updated, 1 new set" (empty parts left out). */
+export function describeSummary(summary: ImportSummary): string {
+  const parts = [
+    `${summary.wordsAdded} ${
+      summary.wordsAdded === 1 ? 'word' : 'words'
+    } added`,
+    `${summary.wordsUpdated} updated`,
+  ];
+  if (summary.rulesAdded) {
+    parts.push(
+      `${summary.rulesAdded} ${
+        summary.rulesAdded === 1 ? 'rule' : 'rules'
+      } added`,
+    );
+  }
+  if (summary.setsCreated) {
+    parts.push(
+      `${summary.setsCreated} new ${
+        summary.setsCreated === 1 ? 'set' : 'sets'
+      }`,
+    );
+  }
+  if (summary.foldersCreated) {
+    parts.push(
+      `${summary.foldersCreated} new ${
+        summary.foldersCreated === 1 ? 'folder' : 'folders'
+      }`,
+    );
+  }
+  if (summary.languagesCreated.length) {
+    parts.push(
+      `${
+        summary.languagesCreated.length === 1 ? 'new language' : 'new languages'
+      } ${summary.languagesCreated.join(', ')}`,
+    );
+  }
+  let text = parts.join(', ') + '.';
+  if (summary.skippedLanguages.length) {
+    text += ` Skipped languages this app doesn't have: ${summary.skippedLanguages.join(
+      ', ',
+    )}.`;
+  }
+  return text;
+}

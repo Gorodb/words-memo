@@ -20,6 +20,7 @@ const word = (id: string, term: string, translation: string): Word => ({
   examples: [],
   description: '',
   learnedAt: null,
+  favoriteAt: null,
   createdAt: 0,
   updatedAt: 0,
 });

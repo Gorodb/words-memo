@@ -140,20 +140,23 @@ const TABLES: { [T in SyncTable]: TableSql<T> } = {
       examples: parseExamples(r.examples_json),
       description: (r.description as string | null) ?? '',
       learnedAt: nullableNum(r.learned_at),
+      favoriteAt: nullableNum(r.favorite_at),
       sortAt: num(r.sort_at),
       createdAt: num(r.created_at),
       updatedAt: num(r.updated_at),
     }),
     upsert: w => [
       `INSERT INTO words (id, set_id, language_code, term, term_norm, translation,
-         examples_json, description, learned_at, sort_at, created_at, updated_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         examples_json, description, learned_at, favorite_at, sort_at, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        WHERE EXISTS (SELECT 1 FROM sets WHERE id = ?)
        ON CONFLICT (id) DO UPDATE SET set_id = excluded.set_id,
          language_code = excluded.language_code, term = excluded.term,
          term_norm = excluded.term_norm, translation = excluded.translation,
          examples_json = excluded.examples_json, description = excluded.description,
-         learned_at = excluded.learned_at, sort_at = excluded.sort_at,
+         learned_at = excluded.learned_at,
+         favorite_at = CASE WHEN ? THEN excluded.favorite_at ELSE favorite_at END,
+         sort_at = excluded.sort_at,
          created_at = excluded.created_at, updated_at = excluded.updated_at`,
       [
         w.id,
@@ -165,10 +168,13 @@ const TABLES: { [T in SyncTable]: TableSql<T> } = {
         JSON.stringify(w.examples),
         w.description,
         w.learnedAt,
+        w.favoriteAt ?? null,
         w.sortAt,
         w.createdAt,
         w.updatedAt,
         w.setId,
+        // A server older than favoriteAt doesn't send it: keep the local star.
+        w.favoriteAt === undefined ? 0 : 1,
       ],
     ],
     remove: id => ['DELETE FROM words WHERE id = ?', [id]],

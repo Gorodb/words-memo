@@ -72,6 +72,7 @@ const remoteWord = (over: Partial<WordRecord>): WordRecord => ({
   examples: [{ text: 'Ich esse', translation: 'Я ем' }],
   description: '',
   learnedAt: null,
+  favoriteAt: null,
   sortAt: 5,
   createdAt: 1,
   updatedAt: 2,
@@ -344,5 +345,37 @@ describe('applyRemoteChanges', () => {
     expect(() => applyRemoteChanges(changes, upToSeq)).toThrow();
     expect(queue()).toEqual([`sets/${set.id}`]);
     expect(db.executeSync('SELECT 1 FROM sync_pause').rows).toEqual([]);
+  });
+});
+
+describe('starred words', () => {
+  test('the star syncs; a server without the field keeps the local star', async () => {
+    const changes = emptyChanges();
+    changes.sets.upserts = [
+      {
+        id: 'remote-s',
+        languageCode: 'de',
+        name: 'Remote set',
+        pinnedAt: null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    changes.words.upserts = [remoteWord({ favoriteAt: 7 })];
+    applyRemoteChanges(changes, 0);
+    expect((await listWords('remote-s'))[0].favoriteAt).toBe(7);
+    expect(
+      (await collectChanges(true)).changes.words.upserts[0].favoriteAt,
+    ).toBe(7);
+
+    // An older server strips unknown fields.
+    const old: Partial<WordRecord> = remoteWord({ translation: 'new' });
+    delete old.favoriteAt;
+    const update = emptyChanges();
+    update.words.upserts = [old as WordRecord];
+    applyRemoteChanges(update, 0);
+    const [word] = await listWords('remote-s');
+    expect(word.translation).toBe('new');
+    expect(word.favoriteAt).toBe(7);
   });
 });

@@ -6,7 +6,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert, FlatList, SectionList, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, View } from 'react-native';
+import ReorderableList, {
+  reorderItems,
+  useReorderableDrag,
+  type ReorderableListReorderEvent,
+} from 'react-native-reorderable-list';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,7 +50,9 @@ import {
   createWord,
   deleteWord,
   listWords,
+  reorderWords,
   resetLearned,
+  setFavorite,
   setLearned,
   updateWord,
 } from '../../db/repositories/words';
@@ -64,10 +71,58 @@ import { WordRow } from './WordRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Set'>;
 
-interface Section {
-  key: 'toLearn' | 'learned';
-  title: string;
-  data: Word[];
+/** Rows of the words list: part headers ("To learn (3)") and words. */
+type ListItem =
+  | { type: 'header'; key: string; title: string }
+  | { type: 'word'; key: string; word: Word; group: number };
+
+/**
+ * Words are dragged only within their group: starred to learn, to learn,
+ * starred learned, learned (the order listWords uses).
+ */
+const groupOf = (w: Word) =>
+  (w.learnedAt === null ? 0 : 2) + (w.favoriteAt === null ? 1 : 0);
+
+/** Words in list order (grouped, each group in the given order) with part headers. */
+function listItems(words: Word[]): ListItem[] {
+  const sorted = [...words].sort((a, b) => groupOf(a) - groupOf(b));
+  const parts = [
+    {
+      key: 'toLearn',
+      title: 'To learn',
+      words: sorted.filter(w => w.learnedAt === null),
+    },
+    {
+      key: 'learned',
+      title: 'Learned',
+      words: sorted.filter(w => w.learnedAt !== null),
+    },
+  ];
+  return parts.flatMap(part =>
+    part.words.length === 0
+      ? []
+      : [
+          {
+            type: 'header' as const,
+            key: part.key,
+            title: `${part.title} (${part.words.length})`,
+          },
+          ...part.words.map(word => ({
+            type: 'word' as const,
+            key: word.id,
+            word,
+            group: groupOf(word),
+          })),
+        ],
+  );
+}
+
+/** A word row in the reorderable list: a long press starts dragging it. */
+function DraggableWordRow(
+  props: Omit<React.ComponentProps<typeof WordRow>, 'onDrag'>,
+) {
+  const drag = useReorderableDrag();
+  return <WordRow {...props} onDrag={drag} />;
 }
 
 type Tab = 'words' | 'rules';
@@ -120,22 +175,33 @@ export function SetScreen({ navigation, route }: Props) {
     }
   }, [set, navigation]);
 
-  const sections = useMemo<Section[]>(() => {
-    const toLearn = (words ?? []).filter(w => w.learnedAt === null);
-    const learned = (words ?? []).filter(w => w.learnedAt !== null);
-    return [
-      {
-        key: 'toLearn' as const,
-        title: `To learn (${toLearn.length})`,
-        data: toLearn,
-      },
-      {
-        key: 'learned' as const,
-        title: `Learned (${learned.length})`,
-        data: learned,
-      },
-    ].filter(s => s.data.length > 0);
-  }, [words]);
+  // A drop shows the new order at once; it's dropped when the DB write
+  // brings new `words`.
+  const [dropped, setDropped] = useState<{
+    words: Word[] | undefined;
+    items: ListItem[];
+  } | null>(null);
+  const loadedItems = useMemo(() => listItems(words ?? []), [words]);
+  const items =
+    dropped && dropped.words === words ? dropped.items : loadedItems;
+
+  /**
+   * A word dropped outside its group (another part, or starred vs not)
+   * stays in its group, at the end nearest to the drop.
+   */
+  const onReorder = ({ from, to }: ReorderableListReorderEvent) => {
+    const moved = items[from];
+    if (moved?.type !== 'word') {
+      return;
+    }
+    const ordered = reorderItems(items, from, to).flatMap(item =>
+      item.type === 'word' ? [item.word] : [],
+    );
+    setDropped({ words, items: listItems(ordered) });
+    reorderWords(
+      ordered.filter(w => groupOf(w) === moved.group).map(w => w.id),
+    );
+  };
 
   const languages = useSettingsStore(s => s.languages);
   const languageName = useMemo(
@@ -490,10 +556,11 @@ export function SetScreen({ navigation, route }: Props) {
           )}
         />
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={item => item.id}
-          stickySectionHeadersEnabled={false}
+        <ReorderableList
+          data={items}
+          keyExtractor={item => item.key}
+          onReorder={onReorder}
+          dragEnabled={!selected}
           contentContainerStyle={[styles.grow, listPadding]}
           ListHeaderComponent={
             words && words.length > 0 && !selected ? (
@@ -535,38 +602,44 @@ export function SetScreen({ navigation, route }: Props) {
               </View>
             ) : undefined
           }
-          renderSectionHeader={({ section }) => (
-            <LabeledDivider label={section.title} />
-          )}
-          renderItem={({ item }) => (
-            <WordRow
-              word={item}
-              expanded={expanded.has(item.id)}
-              onToggleExpanded={() =>
-                setExpanded(prev => toggle(prev, item.id))
-              }
-              onEdit={() => openWordForm(item)}
-              onDelete={() => deleteWord(item.id)}
-              onToggleLearned={() =>
-                setLearned(item.id, item.learnedAt === null)
-              }
-              onOpenDescription={() =>
-                reader.open({ title: item.term, text: item.description })
-              }
-              onSwipeOpen={onSwipeOpen}
-              selection={
-                selected
-                  ? {
-                      selected: selected.has(item.id),
-                      onToggle: () =>
-                        setSelected(prev =>
-                          prev ? toggle(prev, item.id) : prev,
-                        ),
-                    }
-                  : undefined
-              }
-            />
-          )}
+          renderItem={({ item: row }) => {
+            if (row.type === 'header') {
+              return <LabeledDivider label={row.title} />;
+            }
+            const item = row.word;
+            return (
+              <DraggableWordRow
+                word={item}
+                expanded={expanded.has(item.id)}
+                onToggleExpanded={() =>
+                  setExpanded(prev => toggle(prev, item.id))
+                }
+                onEdit={() => openWordForm(item)}
+                onDelete={() => deleteWord(item.id)}
+                onToggleLearned={() =>
+                  setLearned(item.id, item.learnedAt === null)
+                }
+                onToggleFavorite={() =>
+                  setFavorite(item.id, item.favoriteAt === null)
+                }
+                onOpenDescription={() =>
+                  reader.open({ title: item.term, text: item.description })
+                }
+                onSwipeOpen={onSwipeOpen}
+                selection={
+                  selected
+                    ? {
+                        selected: selected.has(item.id),
+                        onToggle: () =>
+                          setSelected(prev =>
+                            prev ? toggle(prev, item.id) : prev,
+                          ),
+                      }
+                    : undefined
+                }
+              />
+            );
+          }}
           ListEmptyComponent={
             words ? (
               <EmptyState

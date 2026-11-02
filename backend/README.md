@@ -1,8 +1,10 @@
 # words-memo backend
 
-Account and sync server for the wordsLearning app: NestJS 12, TypeORM 1 and PostgreSQL.
+Account, sync and library server for the wordsLearning app and website: NestJS 12, TypeORM 1 and PostgreSQL.
 
-The app stays offline-first. Its SQLite database is the only thing it reads from, and this server only keeps a copy per account so that other devices (and, later, a website) can sync with it.
+- **The phone app** stays offline-first. Its SQLite database is the only thing it reads from, and it syncs a copy per account through `/sync`.
+- **The website** (`web/`) works directly on that copy through the library routes (`/languages`, `/folders`, `/sets`, `/words`, `/rules`, `/backup`). Its changes reach the phones with their next sync.
+- **Dictionaries**: the Wiktionary `<lang>-ru.db` files live on this server. The app downloads them from `GET /dictionaries/<file>`, and the website looks words up through the API.
 
 ## Run
 
@@ -13,7 +15,9 @@ npm install
 npm run start:dev           # http://localhost:3000, applies migrations on start
 ```
 
-Everything in Docker: `docker compose up -d --build`.
+Everything in Docker: `docker compose up -d --build`. The `api` container mounts the app's `dictionaries/build/` (from `npm run dict:build` in the repo root) as its dictionaries folder.
+
+Without Docker, put the dictionary files in `backend/dictionaries/`, or set `DICTIONARIES_DIR` (e.g. `DICTIONARIES_DIR=../dictionaries/build`).
 
 For the Android emulator or a USB device, run `adb reverse tcp:3000 tcp:3000` so the app's `http://localhost:3000` (see `src/config/sync.ts` in the app) reaches this machine. Release builds need an HTTPS URL there.
 
@@ -65,6 +69,7 @@ package-lock.json
 
 1. cPanel → **File Manager**: create a folder outside `public_html`, e.g. `/home/<cpuser>/words-api`.
 2. Upload the files there. The easiest way is to zip them locally, upload the zip, then use **Extract**. FTP/SFTP or `scp` also work.
+3. **Dictionaries**: create the folder `dictionaries` inside it (`/home/<cpuser>/words-api/dictionaries`). Upload `de-ru.db` and `en-ru.db` from the repo's `dictionaries/build/` there; `npm run dict:build` in the repo root makes them. They are about 18 and 14 MB. If File Manager's upload limit is lower, zip them first or use FTP. The app downloads them from `https://api.example.com/dictionaries/de-ru.db`; `GET /dictionaries` lists what the server has.
 
 ### 4. Create the Node.js app
 
@@ -100,6 +105,10 @@ If you have SSH or **Terminal**, the app page shows the command to enter its env
 
 ### Updating
 
+- **Dictionaries**: upload the new `.db` files over the old ones in `dictionaries/`. No restart is needed: the server reopens a file when it changes. If `FORMAT_VERSION` in `scripts/dictionary/schema.ts` changed, release the app with the matching `DICTIONARY_FORMAT` at the same time.
+
+To update the code:
+
 1. Run `npm run build` locally.
 2. Upload the new `dist/` (and `package.json` / `package-lock.json` if dependencies changed, then **Run NPM Install**).
 3. Click **Restart**, or run `touch tmp/restart.txt` in the app root.
@@ -113,6 +122,7 @@ New migrations run on that restart.
   - The DB user wasn't added to the database.
   - The Node.js version is older than 22.18.
 - **`no pg_hba.conf entry for host "127.0.0.1"`**: the host's PostgreSQL doesn't accept TCP logins from 127.0.0.1, only from its Unix socket. Put the socket directory in `DATABASE_URL` as `host` and leave the host part empty: `postgres://<user>:<password>@/<database>?host=/var/run/postgresql` (on some hosts the directory is `/tmp`; look for the `.s.PGSQL.5432` file). If that fails with `Peer authentication failed`, ask the host to allow password logins for your user, either over the socket or from `127.0.0.1/32`.
+- **The app says "The dictionary is not on the server yet (HTTP 404)"**: the file isn't in `dictionaries/` in the application root (or in `DICTIONARIES_DIR`). Names must be exactly `de-ru.db` and `en-ru.db`. `GET /dictionaries` shows what the server finds.
 - **The first sync fails with 413** on a large word list: the web server in front of Passenger has its own request size limit. Ask the host to raise `LimitRequestBody` (Apache) or the LiteSpeed request body limit to at least 50 MB.
 
 ## API
@@ -131,6 +141,52 @@ All bodies are JSON. Errors look like `{ code?, message }`, and the app branches
 | `POST /shares/:code/redeem` | | `{payload, expiresAt}` and the code is gone · 404 `SHARE_NOT_FOUND` |
 | `GET /health` | | `{ok: true}` |
 
+### Library (the website)
+
+All bearer. Rows are written with the user's next sync version, under the same per-user lock as `/sync`, so phones pull them on their next sync. Deletes are tombstones and cascade the way the app's foreign keys do: a set takes its words, rules and folder links. Errors: 404 `NOT_FOUND`, 409 `PIN_LIMIT` (more than 5 pinned folders or sets per language), 409 `LANGUAGE_NAME_TAKEN`, 400 `BAD_BACKUP`, and 400 for validation with Nest's `message` list.
+
+| | | |
+|---|---|---|
+| `GET /languages` | | bundled + custom `{code, name, nativeName, custom}` |
+| `POST /languages` | `{name}` | 201 custom language (`x-…` code) |
+| `PATCH /languages/:code` · `DELETE /languages/:code` | `{name}` · | 204; delete takes the language's folders, sets and words |
+| `GET /languages/:code/stats` | | `{sets, words}` |
+| `GET /languages/:code/similar?term=&exclude=` | | `{warning}`: same word, or another form of it with the dictionary ("isst" ↔ "essen") |
+| `GET /folders?language=` | | pinned first, then manual order, with `setCount` |
+| `POST /folders` | `{languageCode, name}` | 201, goes last |
+| `PUT /folders/order` | `{ids}` | 204, `ids[i]` gets position i |
+| `GET /folders/:id` | | folder + `setIds` |
+| `PATCH /folders/:id` · `DELETE /folders/:id` | `{name?, pinned?}` · | 204; delete keeps the sets |
+| `GET /folders/:id/sets` | | sets in the folder |
+| `PUT` · `DELETE /folders/:id/sets/:setId` | | 204, add to / remove from the folder |
+| `GET /sets?language=` | | pinned first, then by name, with `wordCount`, `ruleCount` |
+| `POST /sets` | `{languageCode, name, folderId?}` | 201 |
+| `GET` · `PATCH` · `DELETE /sets/:id` | `{name?, pinned?}` | set · 204 · 204 (with its words and rules) |
+| `POST /sets/:id/reset-progress` | | 204, every word "to learn" |
+| `GET /sets/:id/words` | | to learn first, then learned; starred first in each part; then newest or the manual order |
+| `POST /sets/:id/words` | `{term, translation, examples?, description?}` | 201, on top of "To learn" |
+| `PUT /sets/:id/words/order` | `{ids}` | 204, manual order within the first word's group (to learn / learned × starred) |
+| `GET /sets/:id/sample-outside?limit=` | | random words of the language from other sets ("Study words" options) |
+| `GET /sets/:id/rules` · `POST /sets/:id/rules` | `{title, text}` | oldest first · 201 |
+| `GET /sets/:id/export` · `POST /sets/:id/share-code` | | the set as a backup file · 201 `{code, expiresAt}` |
+| `GET /words?ids=a,b` | | words by id, in that order |
+| `PATCH /words/:id` | `{term?, translation?, examples?, description?, learned?, favorite?}` | the word; `learned` / `favorite` move it to the top of its new group |
+| `DELETE /words/:id` | | 204 |
+| `POST /words/learned` | `{ids}` | 204 |
+| `PATCH` · `DELETE /rules/:id` | `{title, text}` | rule · 204 |
+| `GET /backup/export` | | everything as the app's backup file |
+| `POST /backup/import/preview` · `POST /backup/import` | a backup file | `{summary, setNames, languageCodes}`; import merges with the app's rules and never deletes |
+| `GET /backup/shares/:code/preview` · `POST /backup/shares/:code/import` | | the same for a share code; import uses the code up |
+
+### Dictionaries (no account needed)
+
+| | | |
+|---|---|---|
+| `GET /dictionaries` | | `[{language, file, sizeBytes, format, updatedAt}]` |
+| `GET /dictionaries/de-ru.db` | | the file, with `Range` (resumable) and `ETag` |
+| `GET /dictionaries/:language/search?q=` | | up to 8 entries by prefix of the lemma or any form, umlauts folded |
+| `GET /dictionaries/:language/translations?term=` | | Russian translations of the term's main form |
+
 - **Auth**: there's no email confirmation. An email is unique (trimmed, case-insensitive) and the password is at least 6 characters. Passwords are hashed with scrypt (`node:crypto`). Tokens are 32 random bytes; only their SHA-256 is stored (`auth_tokens`). They never expire, and logout deletes them.
 - **Sync** (`src/sync/protocol.ts`, mirrored in the app's `src/features/sync/protocol.ts`): one request pushes the phone's changes and pulls everyone else's.
   - Tables: `languages` (custom ones only, keyed by code), `sets`, `folders`, `folderSets` (keyed `folderId:setId`), `words`, `rules`. Each one is `{upserts: Record[], deletes: key[]}`.
@@ -144,4 +200,4 @@ All bodies are JSON. Errors look like `{ code?, message }`, and the app branches
 
 ## Schema
 
-`users`, `auth_tokens`, `shared_sets` (share codes, see above), plus one table per synced type. Those have the primary key `(user_id, id)`, the app's columns, `version` and `deleted`, with an index on `(user_id, version)`. There are no foreign keys between the content tables: devices push in any order, and the app skips rows whose parent it doesn't have. The future website can read the same tables, filtering on `deleted = false`, and write through `/sync` or by bumping `version` the same way.
+`users`, `auth_tokens`, `shared_sets` (share codes, see above), plus one table per synced type. Those have the primary key `(user_id, id)`, the app's columns, `version` and `deleted`, with an index on `(user_id, version)`. There are no foreign keys between the content tables: devices push in any order, and the app skips rows whose parent it doesn't have. The library routes (`src/library/`) read the same tables, filtering on `deleted = false`, and write by bumping `version` the same way `/sync` does (`LibraryStore`). `src/library/shared/` and `src/dictionaries/{queries,searchKey,similarWords}.ts` are copies of the app's pure modules (backup format and merge, dictionary queries); keep them in step.

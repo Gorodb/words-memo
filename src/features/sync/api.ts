@@ -54,7 +54,9 @@ async function request<T>(
         ...(options.token && { Authorization: `Bearer ${options.token}` }),
       },
       body:
-        options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
+        options.method === 'GET'
+          ? undefined
+          : JSON.stringify(options.body ?? {}),
       // RN's AbortSignal type differs from the DOM one fetch is typed with.
       signal: controller.signal as RequestInit['signal'],
     });

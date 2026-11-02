@@ -99,6 +99,9 @@ export class WordEntity extends SyncedEntity {
   @Column(ms('learned_at', true))
   learnedAt: number | null;
 
+  @Column(ms('favorite_at', true))
+  favoriteAt: number | null;
+
   @Column(ms('sort_at'))
   sortAt: number;
 

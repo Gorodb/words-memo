@@ -79,7 +79,8 @@ folder_sets (folder_id → folders CASCADE, set_id → sets CASCADE, added_at, P
 words    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code,
           term, term_norm, translation, examples_json ([{text, translation}]),
           description (Markdown, '' = none),
-          learned_at (NULL = to learn), sort_at (list order), created_at, updated_at)
+          learned_at (NULL = to learn), favorite_at (NULL = not starred, v10),
+          sort_at (list order), created_at, updated_at)
           INDEX (language_code, term_norm)          -- used by import merge
 rules    (id TEXT PK, set_id → sets ON DELETE CASCADE, language_code, title ('' for rules made before v8), text (Markdown), created_at, updated_at)
 settings (key PK, value)
@@ -122,7 +123,7 @@ Words are **not unique**: the same term can be in several sets of one language.
   - After every change (debounced 1.5 s), on app foreground, when the network comes back, and as retries (5 s doubling to 5 min).
   - Offline, changes wait in the queue. Changes made while signed out are queued too, and go up at the next sign in.
 - **Synced**: custom languages, sets, folders (order, pins), folder membership, words (learned state and order included), rules. Not synced: theme, active language, dictionaries.
-- **Website** (later): the same API and tables (`deleted = false`).
+- **Website**: works directly on the server's copy through the library routes (same tables, `deleted = false`); its changes get the next sync version, so phones pull them.
 
 ## Share by code ✅
 
@@ -148,7 +149,7 @@ Built from **Wiktionary** via kaikki.org / wiktextract (CC BY-SA 4.0). The origi
   - German adjectives: `gut, besser, am besten`.
   - English irregular verbs: `go, went, gone`.
 - **Lookup**: prefix search over the lemma and every form, with umlauts folded. Typing `isst` finds essen, and `apfel` finds Äpfel.
-- **Distribution**: GitHub Release `dict-v1` of Gorodb/words-memo. You upload the files. The Languages tab downloads them with progress and checks `meta.format`.
+- **Distribution**: the backend serves them (`GET /dictionaries/<lang>-ru.db`, files uploaded into its `dictionaries/` folder; see backend/README.md). The Languages tab downloads them with progress and checks `meta.format`. The website looks words up through the backend instead of downloading.
 - **In the word sheet**:
   - The word field suggests entries, and picking one fills in the full forms.
   - The translation field then suggests that entry's Russian glosses. You can still type freely.
@@ -200,7 +201,7 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 2. ✅ **DB layer + Folders/Sets CRUD**: op-sqlite, migrations, repositories, create and rename bottom sheet, long-press Rename / Delete, Sets tab grouped by folder, persisted settings.
 3. ✅ **Words**: shared bottom-sheet form (fields, required, suggestions, example pairs), Set screen with "To learn" / "Learned" parts, swipe to Edit / Delete, tap to expand examples, and selection mode. Remaining: search.
 4. ✅ **Backup**: export (save / share), import with preview and merge, share a set, unit and round-trip tests.
-5. ✅ **Dictionaries**: Wiktionary build script, download flow, and forms and translation suggestions. Remaining: upload `de-ru.db` / `en-ru.db` to the `dict-v1` release.
+5. ✅ **Dictionaries**: Wiktionary build script, download flow, and forms and translation suggestions. Remaining: upload `de-ru.db` / `en-ru.db` to the server's `dictionaries/` folder.
 6. ✅ **Study modes**: registry plus the first 4 modes. Later: more modes, and spaced repetition.
 7. Polish: app icon, iOS build check on the Mac.
 8. ✅ **Set tiles + flashcards**: Learn / Flashcards tiles on the Set screen, flashcards game, Reset progress.
@@ -211,6 +212,9 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 13. ✅ **Share by code**: `/shares` on the backend (7-day, one-time codes, weekly cleanup), Share code in the set menus, Import by code in the Sets tab. Later: website links that open the app.
 14. ✅ **Pronunciation**: speaker button under Learned on word rows and on the word side of flashcards; system text-to-speech (offline), English and German only (custom languages have no voice locale). Without an installed voice it asks to install one.
 15. ✅ **Duplicate warning**: the word sheet warns about the same or a related word (another form of the same dictionary entry) already added in the language, naming its set.
+16. ✅ **Website** (`web/`): React + Redux Toolkit (RTK Query) + Tailwind, desktop (sidebar) and phone (bottom tabs) layouts. A client of the backend's library routes (account required, nothing stored locally but the session), with dictionary suggestions from the server, the app's backup files and `/s/<CODE>` share links. Deployed as a cPanel Node.js app (`web/README.md`).
+17. ✅ **Starred words and manual order** (app UI; the backend routes support them too): a star next to the speaker on word rows keeps the word at the top of its part ("To learn" / "Learned"); long press drags a word to reorder it within its group. Stars sync (backend migration) and are kept in backups.
+18. ✅ **Backend library + dictionaries**: REST routes for everything the website does (languages, folders, sets, words, rules, learned, ordering, backup import/export, share codes), writing the synced tables so phones pull the changes; dictionaries served from the backend instead of a GitHub Release, with lookup routes for the website.
 
 ## Decisions
 
@@ -219,7 +223,8 @@ Every mode has **Shuffle** and **Hide learned**. Hide learned hides revealed or 
 - Updated words stay in their current set.
 - Term matching is case-sensitive and exact.
 - Platforms: Android and iOS. You'll sign and install the iOS build yourself as an .ipa.
-- Dictionaries come from Wiktionary, are kept out of git, and are downloaded by the app (GitHub Release).
+- Dictionaries come from Wiktionary, are kept out of git, and are served by our backend: the app downloads them, the website queries them.
+- The website has no offline mode: it reads and writes through the backend and needs an account. The phone stays offline-first.
 - Writing modes check the whole string (case-insensitive), and "Mark as correct" covers typos or a missing article.
 - "Hide learned" in study is session-only. The **Learned** button on a correct written answer is the one study action that changes the Learned flag.
 - **Custom languages**: the user can add a language by name (Languages tab → +). It has no dictionary, so words are always typed by hand. Its code is `x-<id>`. Deleting it (long-press → Delete, after a confirmation with counts) deletes its folders, sets and words; bundled languages can't be deleted. Names are unique, ignoring case.

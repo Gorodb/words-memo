@@ -11,10 +11,10 @@ const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 const config = {
   resolver: {
-    // The backend (NestJS) is a separate project; never bundle it.
-    blockList: [
-      new RegExp(`^${escapeRegExp(path.join(__dirname, 'backend'))}[\\\\/].*`),
-    ],
+    // The backend (NestJS) and the website (web/) are separate projects; never bundle them.
+    blockList: ['backend', 'web'].map(
+      dir => new RegExp(`^${escapeRegExp(path.join(__dirname, dir))}[\\\\/].*`),
+    ),
   },
 };
 

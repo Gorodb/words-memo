@@ -16,6 +16,7 @@ const word = (term: string, translation = term, extra = {}) => ({
   examples: [],
   description: '',
   learnedAt: null,
+  favoriteAt: null,
   createdAt: 1,
   updatedAt: 1,
   ...extra,
@@ -85,6 +86,7 @@ describe('parseBackup', () => {
       ],
       description: '', // files from older versions have none
       learnedAt: null,
+      favoriteAt: null, // files from older versions have none
       createdAt: 100,
       updatedAt: 100,
     });

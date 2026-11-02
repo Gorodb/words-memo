@@ -13,6 +13,7 @@ const word = {
   examples: [{ text: 'Ich esse', translation: 'Я ем' }],
   description: '',
   learnedAt: null,
+  favoriteAt: null,
   sortAt: 3,
   createdAt: 1,
   updatedAt: 2,

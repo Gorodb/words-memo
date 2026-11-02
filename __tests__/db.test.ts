@@ -40,8 +40,10 @@ import {
   listLanguageTerms,
   listWords,
   parseExamples,
+  reorderWords,
   resetLearned,
   sampleWordsOutsideSet,
+  setFavorite,
   setLearned,
   setLearnedMany,
   updateWord,
@@ -709,5 +711,63 @@ describe('study words helpers', () => {
     expect(ids).toContain(c.id);
     expect(ids).not.toContain(a.id);
     expect(sample.every(w => w.term !== 'e')).toBe(true);
+  });
+});
+
+describe('starred words and manual order', () => {
+  const add = (setId: string, term: string) =>
+    createWord(setId, { term, translation: term, examples: [] });
+  const terms = async (setId: string) =>
+    (await listWords(setId)).map(w => w.term);
+
+  test('starred words come first in their part, newest star on top', async () => {
+    const set = await createSet('en', 'Stars');
+    const a = await add(set.id, 'a');
+    await add(set.id, 'b');
+    const c = await add(set.id, 'c');
+    await setLearned(c.id, true);
+    expect(await terms(set.id)).toEqual(['b', 'a', 'c']);
+
+    await setFavorite(a.id, true);
+    await setFavorite(c.id, true);
+    expect(await terms(set.id)).toEqual(['a', 'b', 'c']);
+    // A new word goes on top of the plain words, below the starred ones.
+    await add(set.id, 'd');
+    expect(await terms(set.id)).toEqual(['a', 'd', 'b', 'c']);
+    expect((await listWords(set.id))[0].favoriteAt).not.toBeNull();
+
+    await setFavorite(a.id, false);
+    expect(await terms(set.id)).toEqual(['a', 'd', 'b', 'c']);
+    expect((await listWords(set.id))[0].favoriteAt).toBeNull();
+  });
+
+  test('reorderWords keeps the order and new words still land on top', async () => {
+    const set = await createSet('en', 'Order');
+    const a = await add(set.id, 'a');
+    const b = await add(set.id, 'b');
+    const c = await add(set.id, 'c');
+    await reorderWords([a.id, c.id, b.id]);
+    expect(await terms(set.id)).toEqual(['a', 'c', 'b']);
+    await add(set.id, 'd');
+    expect(await terms(set.id)).toEqual(['d', 'a', 'c', 'b']);
+  });
+
+  test('backups carry the star; files without it import unstarred', async () => {
+    const set = await createSet('en', 'Starred backup');
+    const w = await add(set.id, 'starred-term');
+    await setFavorite(w.id, true);
+    const backup = await exportSets([set.id]);
+    expect(backup.languages[0].sets[0].words[0].favoriteAt).not.toBeNull();
+
+    await deleteSet(set.id);
+    const plan = planImport(
+      parseBackup(JSON.stringify(backup)),
+      loadExisting,
+      BUNDLED_LANGUAGES,
+      createId,
+    );
+    await applyImportPlan(plan);
+    const imported = await listWords(plan.createSets[0].id);
+    expect(imported[0].favoriteAt).not.toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import {
   FileText,
   Square,
   SquareCheck,
+  Star,
   Volume2,
 } from 'lucide-react-native';
 import { IconButton } from '../../components/IconButton';
@@ -24,6 +25,9 @@ interface Props {
   onEdit: () => void;
   onDelete: () => void;
   onToggleLearned: () => void;
+  onToggleFavorite: () => void;
+  /** Long press starts dragging the row (reordering); absent = no drag. */
+  onDrag?: () => void;
   /** Opens the word's description (only shown when it has one). */
   onOpenDescription: () => void;
   /** Called when this row's actions start opening (to close the others). */
@@ -33,12 +37,19 @@ interface Props {
 }
 
 const ACTION_WIDTH = 80;
+/**
+ * The star and the speaker sit apart (ICONS_GAP), and their touch areas stop
+ * short of each other, so tapping one doesn't hit the other by accident.
+ */
+const ICONS_GAP = 24;
+const ICON_HIT_SLOP = 8;
 
 /**
  * Swipe left → Edit / Delete. Tap (or "Show examples") → expand examples.
- * "Description" opens the word's Markdown description in a sheet.
- * "Learned" / "To revise" at the end of the row, with the speaker under it
- * (bundled languages only: custom ones have no voice locale).
+ * Long press → drag to reorder. "Description" opens the word's Markdown
+ * description in a sheet. "Learned" / "To revise" at the end of the row, with
+ * the star and the speaker under it (the speaker only for bundled languages:
+ * custom ones have no voice locale).
  */
 export function WordRow({
   word,
@@ -47,6 +58,8 @@ export function WordRow({
   onEdit,
   onDelete,
   onToggleLearned,
+  onToggleFavorite,
+  onDrag,
   onOpenDescription,
   onSwipeOpen,
   selection,
@@ -54,6 +67,7 @@ export function WordRow({
   const { colors } = useAppTheme();
   const swipeRef = useRef<SwipeableMethods>(null);
   const learned = word.learnedAt !== null;
+  const favorite = word.favoriteAt !== null;
 
   const runAction = (action: () => void) => {
     swipeRef.current?.close();
@@ -98,6 +112,15 @@ export function WordRow({
     >
       <Pressable
         onPress={selection ? selection.onToggle : onToggleExpanded}
+        onLongPress={
+          selection || !onDrag
+            ? undefined
+            : () => {
+                swipeRef.current?.close();
+                onDrag();
+              }
+        }
+        delayLongPress={350}
         accessibilityRole={selection ? 'checkbox' : 'button'}
         accessibilityState={
           selection ? { checked: selection.selected } : { expanded }
@@ -194,16 +217,28 @@ export function WordRow({
               variant={learned ? 'secondary' : 'primary'}
               onPress={onToggleLearned}
             />
-            {speechLocale(word.languageCode) ? (
-              <View style={styles.speaker}>
+            <View style={styles.icons}>
+              <IconButton
+                icon={Star}
+                size={20}
+                hitSlop={ICON_HIT_SLOP}
+                filled={favorite}
+                color={favorite ? colors.warning : colors.textSecondary}
+                accessibilityLabel={
+                  favorite ? `Unstar ${word.term}` : `Star ${word.term}`
+                }
+                onPress={onToggleFavorite}
+              />
+              {speechLocale(word.languageCode) ? (
                 <IconButton
                   icon={Volume2}
                   size={20}
+                  hitSlop={ICON_HIT_SLOP}
                   accessibilityLabel={`Pronounce ${word.term}`}
                   onPress={() => speakTerm(word.term, word.languageCode)}
                 />
-              </View>
-            ) : null}
+              ) : null}
+            </View>
           </View>
         )}
       </Pressable>
@@ -230,8 +265,14 @@ const styles = StyleSheet.create({
   },
   text: { flex: 1, paddingTop: 2 },
   side: { alignItems: 'flex-end' },
-  // Lines the icon up with the button's text (its padding is 12, the icon's 4).
-  speaker: { marginRight: 8 },
+  // Lines the last icon up with the button's text (its padding is 12, the icon's 4).
+  icons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ICONS_GAP,
+    marginTop: 4,
+    marginRight: 8,
+  },
   term: { fontSize: 16, fontWeight: '500' },
   translation: { fontSize: 14, marginTop: 2 },
   examples: { marginTop: 8, gap: 8 },

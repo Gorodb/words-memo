@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* App colors (same as the phone app's theme/colors.ts). */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --text: #14171a;
+  --muted: #5f6b7a;
+  --primary: #3b6fe0;
+  --primary-soft: #e3ebfc;
+  --border: #e1e5ea;
+  --danger: #d93f3f;
+  --warning: #a86500;
+  --success: #1e9e5a;
+  --assisted: #b08900;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0f1115;
+  --surface: #1a1d23;
+  --surface-2: #23272f;
+  --text: #eceff3;
+  --muted: #99a3b0;
+  --primary: #6e97f5;
+  --primary-soft: #1f2a44;
+  --border: #2a2f37;
+  --danger: #f06a6a;
+  --warning: #f0b357;
+  --success: #3ccf7f;
+  --assisted: #e0b93a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-line: var(--border);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-assisted: var(--assisted);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-fg antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.animate-sheet {
+  animation: sheet-up 160ms ease-out;
+}
+
+.animate-fade {
+  animation: fade-in 120ms ease-out;
+}

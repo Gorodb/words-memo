@@ -51,19 +51,21 @@ function toWord(row: Row): Word {
     examples: parseExamples(row.examples_json),
     description: (row.description as string | null) ?? '',
     learnedAt: (row.learned_at as number | null) ?? null,
+    favoriteAt: (row.favorite_at as number | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
 }
 
 /**
- * Words to learn first, then learned ones. Within each part the most
- * recently added (or moved) word is on top.
+ * Words to learn first, then learned ones. Within each part starred words
+ * come first; then the most recently added (or moved) word is on top, unless
+ * the user dragged the words into another order (`reorderWords`).
  */
 export async function listWords(setId: ID): Promise<Word[]> {
   const { rows } = await getDb().execute(
     `SELECT * FROM words WHERE set_id = ?
-     ORDER BY learned_at IS NOT NULL, sort_at DESC, rowid DESC`,
+     ORDER BY learned_at IS NOT NULL, favorite_at IS NULL, sort_at DESC, rowid DESC`,
     [setId],
   );
   return rows.map(toWord);
@@ -119,6 +121,7 @@ export async function createWord(setId: ID, input: WordInput): Promise<Word> {
     examples: input.examples,
     description: input.description?.trim() ?? '',
     learnedAt: null,
+    favoriteAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -177,6 +180,50 @@ export async function setLearned(id: ID, learned: boolean): Promise<void> {
      WHERE id = ?`,
     [learned ? now : null, now, now, id],
   );
+  notifyChanged('words');
+}
+
+/**
+ * Stars / unstars a word. Either way it moves to the top of its new group
+ * (starred or not) within its part, like "Learned" does.
+ */
+export async function setFavorite(id: ID, favorite: boolean): Promise<void> {
+  const now = Date.now();
+  await getDb().execute(
+    `UPDATE words SET favorite_at = ?, sort_at = ${NEXT_SORT_AT(
+      'words.set_id',
+    )}, updated_at = ?
+     WHERE id = ?`,
+    [favorite ? now : null, now, now, id],
+  );
+  notifyChanged('words');
+}
+
+/**
+ * Saves a manual order for words of one list group (same set, same part,
+ * same star): `orderedIds[0]` goes on top. They get consecutive sort keys
+ * counting down from the group's highest one, so words added later still
+ * land above them.
+ */
+export async function reorderWords(orderedIds: ID[]): Promise<void> {
+  if (orderedIds.length < 2) {
+    return;
+  }
+  const db = getDb();
+  const { rows } = await db.execute(
+    `SELECT COALESCE(MAX(sort_at), 0) AS top FROM words
+     WHERE id IN (${orderedIds.map(() => '?').join(', ')})`,
+    orderedIds,
+  );
+  const top = rows[0].top as number;
+  await db.transaction(async tx => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx.execute('UPDATE words SET sort_at = ? WHERE id = ?', [
+        top - i,
+        orderedIds[i],
+      ]);
+    }
+  });
   notifyChanged('words');
 }
 

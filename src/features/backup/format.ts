@@ -76,6 +76,11 @@ function parseWord(v: unknown, where: string, now: number): BackupWord {
       typeof v.learnedAt === 'number' && Number.isFinite(v.learnedAt)
         ? v.learnedAt
         : null,
+    // Missing in files from older app versions.
+    favoriteAt:
+      typeof v.favoriteAt === 'number' && Number.isFinite(v.favoriteAt)
+        ? v.favoriteAt
+        : null,
     createdAt: time(v.createdAt, now),
     updatedAt: time(v.updatedAt, now),
   };

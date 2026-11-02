@@ -10,6 +10,10 @@ interface Props {
   /** Defaults to the primary color. */
   color?: string;
   size?: number;
+  /** Fills the icon's shape with its color (e.g. a set star). */
+  filled?: boolean;
+  /** Touch area around the icon; smaller for icons that sit close together. */
+  hitSlop?: number;
 }
 
 export function IconButton({
@@ -18,17 +22,23 @@ export function IconButton({
   accessibilityLabel,
   color,
   size = 24,
+  filled = false,
+  hitSlop = 12,
 }: Props) {
   const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={12}
+      hitSlop={hitSlop}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
-      <Icon color={color ?? colors.primary} size={size} />
+      <Icon
+        color={color ?? colors.primary}
+        size={size}
+        fill={filled ? color ?? colors.primary : 'none'}
+      />
     </Pressable>
   );
 }

@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .env
+# Dictionary files served by GET /dictionaries (see README); not in git.
+/dictionaries/

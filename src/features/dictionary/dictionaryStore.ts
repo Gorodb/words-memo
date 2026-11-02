@@ -42,7 +42,9 @@ function checkFormat(language: LanguageCode): void {
   const format = Number(rows[0]?.value);
   if (format !== DICTIONARY_FORMAT) {
     throw new Error(
-      `Unsupported dictionary format ${format || 'unknown'} (expected ${DICTIONARY_FORMAT}).`,
+      `Unsupported dictionary format ${
+        format || 'unknown'
+      } (expected ${DICTIONARY_FORMAT}).`,
     );
   }
 }
@@ -100,8 +102,10 @@ export const useDictionaryStore = create<DictionaryState>((set, get) => {
         });
         const result = await promise;
         if (result.statusCode === 404) {
-          // Release missing, still a draft, or the repo isn't public.
-          throw new Error('The dictionary file is not published yet (HTTP 404).');
+          // Not uploaded to the server's dictionaries folder yet.
+          throw new Error(
+            'The dictionary is not on the server yet (HTTP 404).',
+          );
         }
         if (result.statusCode < 200 || result.statusCode >= 300) {
           throw new Error(`Download failed (HTTP ${result.statusCode}).`);

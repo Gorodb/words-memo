@@ -65,6 +65,8 @@ export interface WordRecord {
   examples: ExampleRecord[];
   description: string;
   learnedAt: number | null;
+  /** Starred: listed above the other words of its part; null = not starred. */
+  favoriteAt: number | null;
   sortAt: number;
   createdAt: number;
   updatedAt: number;
@@ -196,6 +198,8 @@ export const RECORD_FIELDS: { [T in SyncTable]: Record<string, Field> } = {
     examples: { kind: 'examples' },
     description: text,
     learnedAt: nullableNum,
+    // Missing from older app versions and the website: not starred.
+    favoriteAt: nullableNum,
     sortAt: num,
     createdAt: num,
     updatedAt: num,

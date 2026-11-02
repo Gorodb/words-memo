@@ -1,0 +1,150 @@
+// Copied from the app (src/domain/types.ts); keep both in step.
+/**
+ * Core domain model. Storage-agnostic: the DB layer (SQLite) maps rows to these types.
+ */
+
+export type ID = string;
+/**
+ * ISO-639-1 code of a bundled language ('en', 'de'), or 'x-<id>' for a
+ * language the user added.
+ */
+export type LanguageCode = string;
+/** Milliseconds since epoch. */
+export type Timestamp = number;
+
+export interface Language {
+  code: LanguageCode;
+  /** English name, e.g. 'German'. */
+  name: string;
+  /** Native name, e.g. 'Deutsch'. Same as `name` for custom languages. */
+  nativeName: string;
+  /** Added by the user: no dictionary, can be renamed and deleted. */
+  custom?: boolean;
+}
+
+/** A user-ordered group that contains any number of sets of its language. */
+export interface Folder {
+  id: ID;
+  languageCode: LanguageCode;
+  name: string;
+  /** Manual sort order within the language (drag and drop). */
+  position: number;
+  /** Pinned to the top of the list; null = not pinned. */
+  pinnedAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * Sets exist on their own (per language). A set can be in several folders;
+ * removing a folder only removes its sets from it.
+ */
+export interface WordSet {
+  id: ID;
+  languageCode: LanguageCode;
+  name: string;
+  /** Pinned to the top of the lists; null = not pinned. */
+  pinnedAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Example {
+  /** Sentence in the learned language. */
+  text: string;
+  /** Its Russian translation (may be empty). */
+  translation: string;
+}
+
+export interface Word {
+  id: ID;
+  setId: ID;
+  languageCode: LanguageCode;
+  /** Word or phrase in the learned language. */
+  term: string;
+  /** Russian translation. */
+  translation: string;
+  /** Any number of usage examples, typed or pasted. */
+  examples: Example[];
+  /** Long Markdown note, opened from the word row; '' = none. */
+  description: string;
+  /** When the word was marked as learned; null = still to learn. */
+  learnedAt: Timestamp | null;
+  /** Starred: listed above the other words of its part; null = not starred. */
+  favoriteAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * Editable part of a Word (what the word form produces). Without
+ * `description`, an update keeps the current one.
+ */
+export type WordInput = Pick<Word, 'term' | 'translation' | 'examples'> &
+  Partial<Pick<Word, 'description'>>;
+
+/**
+ * A grammar rule or note in a set: Markdown text that is only read. Rules are
+ * never part of study modes.
+ */
+export interface Rule {
+  id: ID;
+  setId: ID;
+  languageCode: LanguageCode;
+  /** Shown in the rules list; '' for rules made before titles existed. */
+  title: string;
+  /** Markdown. */
+  text: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export type BackupWord = Pick<
+  Word,
+  | 'term'
+  | 'translation'
+  | 'examples'
+  | 'description'
+  | 'learnedAt'
+  | 'favoriteAt'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+/** Editable part of a Rule (what the rule form produces). */
+export type RuleInput = Pick<Rule, 'title' | 'text'>;
+
+export type BackupRule = Pick<
+  Rule,
+  'title' | 'text' | 'createdAt' | 'updatedAt'
+>;
+
+export type BackupSet = Pick<WordSet, 'name' | 'createdAt' | 'updatedAt'> & {
+  words: BackupWord[];
+  /** Oldest first. Missing in files from older app versions. */
+  rules: BackupRule[];
+};
+
+export type BackupFolder = Pick<Folder, 'name' | 'createdAt' | 'updatedAt'> & {
+  /** Names of the sets in this folder. */
+  setNames: string[];
+};
+
+/** Shape of an exported backup file. Versioned so the format can evolve. */
+export interface BackupFile {
+  app: 'wordsLearning';
+  version: 1;
+  /** 'full': Settings → Export. 'sets': shared sets (no folders). */
+  kind: 'full' | 'sets';
+  exportedAt: Timestamp;
+  languages: Array<{
+    code: LanguageCode;
+    /** Name of a custom language, so importing can create or match it. */
+    name?: string;
+    /** Folders in manual order. */
+    folders: BackupFolder[];
+    sets: BackupSet[];
+  }>;
+}

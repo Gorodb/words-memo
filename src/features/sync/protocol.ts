@@ -59,6 +59,11 @@ export interface WordRecord {
   examples: Array<{ text: string; translation: string }>;
   description: string;
   learnedAt: number | null;
+  /**
+   * Starred: listed above the other words of its part; null = not starred.
+   * Missing (undefined) from a server older than this field: keep the local one.
+   */
+  favoriteAt: number | null;
   sortAt: number;
   createdAt: number;
   updatedAt: number;

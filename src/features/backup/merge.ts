@@ -64,6 +64,7 @@ export interface ImportPlan {
     examples: Example[];
     description: string;
     learnedAt: Timestamp | null;
+    favoriteAt: Timestamp | null;
     createdAt: Timestamp;
     updatedAt: Timestamp;
   }>;
@@ -211,6 +212,7 @@ export function planImport(
             examples: word.examples,
             description: word.description,
             learnedAt: word.learnedAt,
+            favoriteAt: word.favoriteAt,
             createdAt: word.createdAt,
             updatedAt: word.updatedAt,
           });

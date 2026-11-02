@@ -9,5 +9,6 @@ import { SharesService } from './shares.service.ts';
   imports: [AuthModule, TypeOrmModule.forFeature([SharedSet])],
   controllers: [SharesController],
   providers: [SharesService],
+  exports: [SharesService],
 })
 export class SharesModule {}

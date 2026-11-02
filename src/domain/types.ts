@@ -69,6 +69,8 @@ export interface Word {
   description: string;
   /** When the word was marked as learned; null = still to learn. */
   learnedAt: Timestamp | null;
+  /** Starred: listed above the other words of its part; null = not starred. */
+  favoriteAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -105,6 +107,7 @@ export type BackupWord = Pick<
   | 'examples'
   | 'description'
   | 'learnedAt'
+  | 'favoriteAt'
   | 'createdAt'
   | 'updatedAt'
 >;

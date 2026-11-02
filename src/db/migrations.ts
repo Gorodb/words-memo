@@ -142,6 +142,8 @@ const MIGRATIONS: string[][] = [
     ...syncTriggers('words', 'words', row => `${row}.id`),
     ...syncTriggers('rules', 'rules', row => `${row}.id`),
   ],
+  // v10: starred words, listed above the other words of their part.
+  ['ALTER TABLE words ADD COLUMN favorite_at INTEGER'],
 ];
 
 /**

@@ -19,6 +19,7 @@ const word = (id: string, learned = false): Word => ({
   examples: [],
   description: '',
   learnedAt: learned ? 1 : null,
+  favoriteAt: null,
   createdAt: 0,
   updatedAt: 0,
 });

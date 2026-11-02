@@ -22,6 +22,7 @@ const word = (id: string, term = id, translation = `t-${id}`): Word => ({
   examples: [],
   description: '',
   learnedAt: null,
+  favoriteAt: null,
   createdAt: 1,
   updatedAt: 1,
 });

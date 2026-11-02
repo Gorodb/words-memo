@@ -36,7 +36,7 @@ async function setsWithWords(
   const ids = [...result.keys()];
   const { rows: words } = await db.execute(
     `SELECT * FROM words WHERE set_id IN (${ids.map(() => '?').join(', ')})
-     ORDER BY learned_at IS NOT NULL, sort_at DESC, rowid DESC`,
+     ORDER BY learned_at IS NOT NULL, favorite_at IS NULL, sort_at DESC, rowid DESC`,
     ids,
   );
   for (const w of words) {
@@ -46,6 +46,7 @@ async function setsWithWords(
       examples: parseExamples(w.examples_json),
       description: (w.description as string | null) ?? '',
       learnedAt: (w.learned_at as number | null) ?? null,
+      favoriteAt: (w.favorite_at as number | null) ?? null,
       createdAt: w.created_at as number,
       updatedAt: w.updated_at as number,
     });
@@ -242,8 +243,8 @@ export async function applyImportPlan(plan: ImportPlan): Promise<void> {
     for (const w of plan.insertWords) {
       // The backup's order is newest first, so later rows sort lower.
       await tx.execute(
-        `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, description, learned_at, sort_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO words (id, set_id, language_code, term, term_norm, translation, examples_json, description, learned_at, favorite_at, sort_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           w.id,
           w.setId,
@@ -254,6 +255,7 @@ export async function applyImportPlan(plan: ImportPlan): Promise<void> {
           JSON.stringify(w.examples),
           w.description,
           w.learnedAt,
+          w.favoriteAt,
           w.createdAt,
           w.createdAt,
           w.updatedAt,
