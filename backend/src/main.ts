@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.ts';
+import { requestContextMiddleware } from './events/request-context.ts';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -10,6 +11,8 @@ async function bootstrap() {
     bodyParser: false,
   });
   app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '50mb' });
+  // After the body parser: its stream events would lose the context.
+  app.use(requestContextMiddleware);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // The future website will call the same API from the browser.
   app.enableCors();

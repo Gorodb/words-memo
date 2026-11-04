@@ -1,11 +1,5 @@
 import { memo } from 'react';
-import {
-  CircleCheck,
-  Circle,
-  EllipsisVertical,
-  FileText,
-  Volume2,
-} from 'lucide-react';
+import { EllipsisVertical, FileText, Volume2 } from 'lucide-react';
 import type { Word } from '../../domain/types';
 import { speakTerm, speechLocale } from '../../features/speech/speech';
 import { IconButton } from '../../ui/Button';
@@ -25,12 +19,16 @@ export async function pronounce(term: string, languageCode: string) {
 
 /**
  * One word: term, translation, then (tapped open) its examples. A "Description"
- * link opens the Markdown note. The circle marks it learned or to learn.
+ * link opens the Markdown note. "Learned" / "To revise" moves it between the
+ * parts, like on the phone. With a mouse, a faint checkbox shows on hover:
+ * checking it starts "Select words" with this word.
  */
 export const WordRow = memo(function WordRow({
   word,
   expanded,
-  selection,
+  selecting,
+  selected,
+  onToggleSelected,
   onToggleExpanded,
   onToggleLearned,
   onMenu,
@@ -38,8 +36,10 @@ export const WordRow = memo(function WordRow({
 }: {
   word: Word;
   expanded: boolean;
-  /** Present in "Select words" mode. */
-  selection?: { selected: boolean; onToggle: () => void };
+  /** "Select words" mode: a click on the row toggles its checkbox. */
+  selecting: boolean;
+  selected: boolean;
+  onToggleSelected: () => void;
   onToggleExpanded: () => void;
   onToggleLearned: () => void;
   onMenu: () => void;
@@ -47,23 +47,26 @@ export const WordRow = memo(function WordRow({
 }) {
   const learned = word.learnedAt !== null;
   const canSpeak = speechLocale(word.languageCode) !== null;
-  const longPress = useLongPress(selection ? undefined : onMenu);
+  const longPress = useLongPress(selecting ? undefined : onMenu);
   return (
     <div
-      className={`flex gap-2 rounded-2xl border bg-surface py-3 pr-1.5 pl-4 transition select-none ${
-        selection?.selected ? 'border-primary bg-primary-soft/40' : 'border-line'
-      }`}
+      className={`group flex gap-2 rounded-2xl border bg-surface py-3 pr-1.5 transition select-none ${
+        selected ? 'border-primary bg-primary-soft/40' : 'border-line'
+      } ${selecting ? 'pl-3' : 'pl-4 pointer-fine:pl-3'}`}
       {...longPress.handlers}
     >
-      {selection ? (
-        <input
-          type="checkbox"
-          aria-label={`Select ${word.term}`}
-          className="mt-1 size-5 shrink-0 accent-primary"
-          checked={selection.selected}
-          onChange={selection.onToggle}
-        />
-      ) : null}
+      <input
+        type="checkbox"
+        aria-label={`Select ${word.term}`}
+        title={selecting ? undefined : 'Select for studying'}
+        className={`mt-1 size-4.5 shrink-0 cursor-pointer accent-primary transition-opacity ${
+          selecting
+            ? ''
+            : 'hidden opacity-0 group-hover:opacity-50 hover:opacity-100! focus-visible:opacity-100 pointer-fine:block'
+        }`}
+        checked={selected}
+        onChange={onToggleSelected}
+      />
       <div
         className="min-w-0 flex-1 cursor-pointer"
         onClick={() => {
@@ -71,8 +74,8 @@ export const WordRow = memo(function WordRow({
             longPress.fired.current = false;
             return;
           }
-          if (selection) {
-            selection.onToggle();
+          if (selecting) {
+            onToggleSelected();
           } else {
             onToggleExpanded();
           }
@@ -117,15 +120,20 @@ export const WordRow = memo(function WordRow({
           </div>
         ) : null}
       </div>
-      {selection ? null : (
-        <div className="-mt-1 flex shrink-0 items-start">
-          <IconButton
-            icon={learned ? CircleCheck : Circle}
-            label={learned ? 'Learned. Move to "To learn"' : 'Mark as learned'}
-            active={learned}
-            className={learned ? 'text-success hover:text-success' : ''}
+      {selecting ? null : (
+        <div className="-mt-1 flex shrink-0 items-start gap-0.5">
+          <button
+            type="button"
+            title={learned ? 'Move to "To learn"' : 'Mark as learned'}
             onClick={onToggleLearned}
-          />
+            className={`mt-0.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition select-none ${
+              learned
+                ? 'bg-surface-2 text-fg hover:brightness-95 dark:hover:brightness-125'
+                : 'bg-primary text-white hover:brightness-110'
+            }`}
+          >
+            {learned ? 'To revise' : 'Learned'}
+          </button>
           {canSpeak ? (
             <IconButton
               icon={Volume2}

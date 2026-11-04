@@ -12,6 +12,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In, type EntityManager, type FindOptionsWhere } from 'typeorm';
+import { EventsService } from '../events/events.service.ts';
 import { User } from '../users/user.entity.ts';
 import {
   FolderEntity,
@@ -115,7 +116,7 @@ export class Reader {
 
 /** Reader that can also write, inside one transaction with one version. */
 export class Writer extends Reader {
-  private wrote = false;
+  private readonly written = new Set<SyncTable>();
 
   constructor(
     manager: EntityManager,
@@ -126,7 +127,12 @@ export class Writer extends Reader {
   }
 
   get changed(): boolean {
-    return this.wrote;
+    return this.written.size > 0;
+  }
+
+  /** Tables this transaction wrote rows to. */
+  get tables(): SyncTable[] {
+    return [...this.written];
   }
 
   /** Inserts or replaces rows (as /sync does for a phone's push). */
@@ -134,7 +140,7 @@ export class Writer extends Reader {
     if (records.length === 0) {
       return;
     }
-    this.wrote = true;
+    this.written.add(table);
     const repository = this.manager.getRepository(ENTITY[table]);
     for (const part of chunks(records, CHUNK)) {
       await repository.upsert(
@@ -149,7 +155,7 @@ export class Writer extends Reader {
     if (keys.length === 0) {
       return;
     }
-    this.wrote = true;
+    this.written.add(table);
     const repository = this.manager.getRepository(ENTITY[table]);
     for (const part of chunks(keys, CHUNK)) {
       await repository.update(
@@ -190,7 +196,10 @@ export class Writer extends Reader {
 
 @Injectable()
 export class LibraryStore {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly events: EventsService,
+  ) {}
 
   read<R>(userId: string, work: (reader: Reader) => Promise<R>): Promise<R> {
     return work(new Reader(this.dataSource.manager, userId));
@@ -213,6 +222,8 @@ export class LibraryStore {
       const result = await work(writer);
       if (writer.changed) {
         await manager.update(User, { id: userId }, { syncVersion: writer.version });
+        // Phones and other tabs hear about it once the transaction commits.
+        await this.events.publish(manager, userId, writer.version, writer.tables);
       }
       return result;
     });

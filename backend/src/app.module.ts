@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module.ts';
 import { typeOrmOptions } from './database/typeorm.options.ts';
 import { DictionariesModule } from './dictionaries/dictionaries.module.ts';
+import { EventsModule } from './events/events.module.ts';
 import { LibraryModule } from './library/library.module.ts';
 import { SharesModule } from './shares/shares.module.ts';
 import { SyncModule } from './sync/sync.module.ts';
@@ -25,6 +26,7 @@ class HealthController {
         typeOrmOptions(config.getOrThrow<string>('DATABASE_URL')),
     }),
     AuthModule,
+    EventsModule,
     SyncModule,
     SharesModule,
     DictionariesModule,

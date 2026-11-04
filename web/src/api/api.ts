@@ -14,6 +14,7 @@ import {
   type FetchBaseQueryError,
 } from '@reduxjs/toolkit/query/react';
 import { API_URL } from '../config/api';
+import { CLIENT_ID } from './clientId';
 import type { BackupFile, ID, RuleInput } from '../domain/types';
 import { authActions, type AuthState } from '../store/authSlice';
 import type {
@@ -38,6 +39,8 @@ const rawBaseQuery = fetchBaseQuery({
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
+    // Live updates skip this tab's own changes.
+    headers.set('X-Client-Id', CLIENT_ID);
     return headers;
   },
 });

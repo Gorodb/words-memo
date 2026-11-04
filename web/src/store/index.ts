@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import { useDispatch, useSelector } from 'react-redux';
 import { libraryApi } from '../api/api';
+import { startLiveUpdates } from '../api/liveUpdates';
 import { authReducer, initialAuthState, type AuthState } from './authSlice';
 import {
   initialSettingsState,
@@ -45,6 +46,8 @@ export const store = configureStore({
 });
 
 setupListeners(store.dispatch);
+// Changes made on phones or in other tabs show up here as they happen.
+startLiveUpdates(store);
 
 let last: string | null = null;
 store.subscribe(() => {

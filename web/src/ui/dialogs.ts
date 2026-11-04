@@ -27,9 +27,19 @@ export interface MenuItem {
   disabled?: boolean;
 }
 
+/** Where a dropdown menu opens: under a button, or at the pointer (right click). */
+export type MenuAnchor =
+  | { kind: 'rect'; rect: DOMRect }
+  | { kind: 'point'; x: number; y: number };
+
 export interface MenuOptions {
   title?: string;
   items: MenuItem[];
+  /**
+   * Set by showMenu from the click that opened it: a dropdown there.
+   * Without one (long press on touch screens) the menu is a bottom sheet.
+   */
+  anchor?: MenuAnchor;
 }
 
 export interface ReaderOptions {
@@ -114,9 +124,40 @@ export function ask(
   );
 }
 
-/** Action menu; the chosen item runs after the menu has closed. */
+/**
+ * The click or right click being handled right now. Recorded in the capture
+ * phase, before React's handlers run, and cleared after the event, so a
+ * showMenu called from a handler knows what opened it.
+ */
+let currentAnchor: MenuAnchor | undefined;
+
+function recordAnchor(e: MouseEvent) {
+  if (e.type === 'contextmenu') {
+    currentAnchor = { kind: 'point', x: e.clientX, y: e.clientY };
+  } else {
+    const target = e.target instanceof Element ? e.target : null;
+    const button = target?.closest('button, [role="button"], [role="menuitem"]');
+    currentAnchor = button
+      ? { kind: 'rect', rect: button.getBoundingClientRect() }
+      : { kind: 'point', x: e.clientX, y: e.clientY };
+  }
+  setTimeout(() => {
+    currentAnchor = undefined;
+  }, 0);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', recordAnchor, true);
+  window.addEventListener('contextmenu', recordAnchor, true);
+}
+
+/**
+ * Action menu; the chosen item runs after the menu has closed. Opened by a
+ * click it is a dropdown at the clicked button (or the pointer, for a right
+ * click); opened by a long press on a touch screen it is a bottom sheet.
+ */
 export function showMenu(options: MenuOptions): void {
-  push({ kind: 'menu', options });
+  push({ kind: 'menu', options: { anchor: currentAnchor, ...options } });
 }
 
 export function showForm(options: FormOptions | FormChoice): void {

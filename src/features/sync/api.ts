@@ -1,5 +1,6 @@
 import { SYNC_API_URL } from '../../config/sync';
 import type { BackupFile } from '../../domain/types';
+import { CLIENT_ID } from './clientId';
 import type { SyncRequest, SyncResponse } from './protocol';
 
 /** The server answered with an error status. */
@@ -51,6 +52,8 @@ async function request<T>(
       method: options.method ?? 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Live updates (/events) skip the changes this app made.
+        'X-Client-Id': CLIENT_ID,
         ...(options.token && { Authorization: `Bearer ${options.token}` }),
       },
       body:

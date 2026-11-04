@@ -16,6 +16,7 @@ import {
 import { applyRemoteChanges, collectChanges } from '../../db/repositories/sync';
 import { useSettingsStore } from '../../store/settingsStore';
 import { api, ApiError, AUTH_ERRORS, NetworkError, type Session } from './api';
+import { setLiveSession } from './liveUpdates';
 
 /**
  * Optional account sync. The phone's database stays the only place the app
@@ -25,8 +26,9 @@ import { api, ApiError, AUTH_ERRORS, NetworkError, type Session } from './api';
  *
  * A sync runs after sign in (a full one: every row goes up, every row the
  * phone lacks comes down), after local changes (debounced), when the app
- * comes to the foreground, when the network comes back, and as retries with
- * backoff after a failure.
+ * comes to the foreground, when the network comes back, when the server says
+ * another device changed the account (live updates, `liveUpdates.ts`), and as
+ * retries with backoff after a failure.
  */
 
 export type SyncStatus =
@@ -143,6 +145,14 @@ async function syncOnce(): Promise<void> {
   useSyncStore.setState({ status: 'idle', lastSyncedAt: now, message: null });
 }
 
+/** Live update: pull when the account moved past what this phone has. */
+function onRemoteVersion(version: number): void {
+  const saved = readSettings()[KEYS.cursor];
+  if (saved === undefined || version > Number(saved)) {
+    schedule(0);
+  }
+}
+
 /** Custom languages added, renamed or deleted on another device. */
 function refreshLanguages(): void {
   const settings = useSettingsStore.getState();
@@ -198,12 +208,14 @@ function beginSession(session: Session): void {
     lastSyncedAt: null,
     message: null,
   });
+  setLiveSession(token, onRemoteVersion);
   schedule(0);
 }
 
 /** Forgets the session; the words stay on the phone. */
 function endSession(): void {
   token = null;
+  setLiveSession(null, onRemoteVersion);
   if (timer) {
     clearTimeout(timer);
     timer = null;
@@ -289,5 +301,6 @@ export function startSync(): void {
     }
     online = nowOnline;
   });
+  setLiveSession(token, onRemoteVersion);
   schedule(0);
 }

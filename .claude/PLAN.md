@@ -124,6 +124,7 @@ Words are **not unique**: the same term can be in several sets of one language.
   - Offline, changes wait in the queue. Changes made while signed out are queued too, and go up at the next sign in.
 - **Synced**: custom languages, sets, folders (order, pins), folder membership, words (learned state and order included), rules. Not synced: theme, active language, dictionaries.
 - **Website**: works directly on the server's copy through the library routes (same tables, `deleted = false`); its changes get the next sync version, so phones pull them.
+- **Live updates**: open clients (phones in the foreground, visible website tabs) keep a server-sent events stream (`GET /events`) and hear about every change another client commits: phones sync right away, the website refetches. A client's own changes aren't echoed back (`X-Client-Id`).
 
 ## Share by code ✅
 

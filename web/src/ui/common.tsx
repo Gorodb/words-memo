@@ -154,25 +154,39 @@ export function ActionTile({
   icon: Icon,
   title,
   subtitle,
+  compact = false,
   onPress,
 }: {
   icon: ComponentType<LucideProps>;
   title: string;
   subtitle: string;
+  /** Small: icon and title only (a sticky bar on a scrolled page). */
+  compact?: boolean;
   onPress: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onPress}
-      className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-line bg-surface p-3 text-left sm:p-4 transition hover:border-primary/60 hover:shadow-sm"
+      title={compact ? subtitle : undefined}
+      className={`flex min-w-0 flex-1 items-center rounded-2xl border border-line bg-surface text-left transition-all hover:border-primary/60 hover:shadow-sm ${
+        compact ? 'gap-2 px-2.5 py-1.5' : 'gap-3 p-3 sm:p-4'
+      }`}
     >
-      <span className="flex size-10 shrink-0 sm:size-11 items-center justify-center rounded-xl bg-primary-soft text-primary">
-        <Icon size={22} />
+      <span
+        className={`flex shrink-0 items-center justify-center bg-primary-soft text-primary transition-all ${
+          compact ? 'size-7 rounded-lg' : 'size-10 rounded-xl sm:size-11'
+        }`}
+      >
+        <Icon size={compact ? 16 : 22} />
       </span>
       <span className="min-w-0">
-        <span className="block font-semibold">{title}</span>
-        <span className="block truncate text-sm text-muted">{subtitle}</span>
+        <span className={`block truncate font-semibold ${compact ? 'text-sm' : ''}`}>
+          {title}
+        </span>
+        {compact ? null : (
+          <span className="block truncate text-sm text-muted">{subtitle}</span>
+        )}
       </span>
     </button>
   );

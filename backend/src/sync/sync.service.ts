@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In, type EntityManager } from 'typeorm';
+import { EventsService } from '../events/events.service.ts';
 import { User } from '../users/user.entity.ts';
 import {
   FolderEntity,
@@ -51,7 +52,10 @@ export const SyncErrorCode = {
  */
 @Injectable()
 export class SyncService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly events: EventsService,
+  ) {}
 
   sync(userId: string, request: SyncRequest): Promise<SyncResponse> {
     return this.dataSource.transaction(async manager => {
@@ -80,6 +84,17 @@ export class SyncService {
           await this.push(manager, table, userId, version, request);
         }
         await manager.update(User, { id: userId }, { syncVersion: version });
+        // Open clients hear about it once the transaction commits.
+        await this.events.publish(
+          manager,
+          userId,
+          version,
+          SYNC_TABLES.filter(
+            t =>
+              request.changes[t].upserts.length > 0 ||
+              request.changes[t].deletes.length > 0,
+          ),
+        );
       }
 
       const changes = emptyChanges();

@@ -102,18 +102,26 @@ function Session({
       closeTo={`/sets/${setId}`}
       actions={
         <>
-          <Button variant="ghost" icon={Shuffle} className="px-2.5" onClick={() => dispatch({ type: 'shuffle' })}>
-            <span className="hidden sm:inline">Shuffle</span>
-          </Button>
           <Button
             variant="ghost"
-            icon={EyeOff}
+            icon={Shuffle}
             className="px-2.5"
-            disabled={learnedNow === 0}
-            onClick={() => dispatch({ type: 'hideLearned' })}
+            onClick={() => dispatch({ type: 'shuffle' })}
           >
-            <span className="hidden sm:inline">Hide learned</span>
+            Shuffle
           </Button>
+          {mode.kind === 'write' ? (
+            // Reveal modes only flip cards: nothing to hide there.
+            <Button
+              variant="ghost"
+              icon={EyeOff}
+              className="px-2.5"
+              disabled={learnedNow === 0}
+              onClick={() => dispatch({ type: 'hideLearned' })}
+            >
+              <span className="hidden sm:inline">Hide learned</span>
+            </Button>
+          ) : null}
         </>
       }
     >
@@ -150,7 +158,7 @@ function Session({
   );
 }
 
-/** Click: reveal / hide the answer. Hide: drop the card for this session. */
+/** Click: reveal / hide the answer. Every card starts hidden. */
 function RevealCard({
   card,
   progress,
@@ -162,30 +170,25 @@ function RevealCard({
 }) {
   const revealed = progress.kind === 'reveal' && progress.revealed;
   return (
-    <div className="flex items-stretch gap-2 rounded-2xl border border-line bg-surface">
-      <button
-        type="button"
-        onClick={() => dispatch({ type: 'toggleReveal', id: card.id })}
-        className="min-w-0 flex-1 px-4 py-4 text-left"
-      >
-        <span className="block text-lg font-semibold whitespace-pre-line break-words">{card.prompt}</span>
-        <span
-          className={`mt-2 block whitespace-pre-line break-words ${
-            revealed ? 'text-primary' : 'text-muted/60 select-none'
-          }`}
-        >
-          {revealed ? card.answer : 'Click to reveal'}
+    <button
+      type="button"
+      aria-expanded={revealed}
+      onClick={() => dispatch({ type: 'toggleReveal', id: card.id })}
+      className={`w-full rounded-2xl border bg-surface px-4 py-4 text-left transition hover:border-primary/50 ${
+        revealed ? 'border-primary/40' : 'border-line'
+      }`}
+    >
+      <span className="block text-lg font-semibold whitespace-pre-line break-words">
+        {card.prompt}
+      </span>
+      {revealed ? (
+        <span className="mt-2 block font-medium whitespace-pre-line break-words text-primary">
+          {card.answer}
         </span>
-      </button>
-      <button
-        type="button"
-        onClick={() => dispatch({ type: 'hide', id: card.id })}
-        className="shrink-0 rounded-r-2xl border-l border-line px-3 text-sm text-muted hover:bg-surface-2 hover:text-fg"
-        title="Hide this word for this session"
-      >
-        Hide
-      </button>
-    </div>
+      ) : (
+        <span className="mt-2 block text-sm text-muted select-none">Click to reveal</span>
+      )}
+    </button>
   );
 }
 

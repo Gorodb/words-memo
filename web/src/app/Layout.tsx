@@ -124,24 +124,40 @@ function BottomTabs() {
 
 /**
  * Page title row: sticky on phones (like a native header), with a back
- * button and the page's actions on the right.
+ * button and the page's actions on the right. `embedded`: inside the page's
+ * own sticky bar (no sticky, background or border of its own); `compact`:
+ * the smaller desktop size of a scrolled page.
  */
 export function PageHeader({
   title,
   subtitle,
   back,
   actions,
+  embedded = false,
+  compact = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   /** Where the back button goes; true = browser history. */
   back?: string | true;
   actions?: ReactNode;
+  embedded?: boolean;
+  compact?: boolean;
 }) {
   const navigate = useNavigate();
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-bg/90 backdrop-blur md:static md:border-0 md:bg-transparent md:backdrop-blur-none">
-      <div className="mx-auto flex min-h-14 max-w-3xl items-center gap-1 px-2 pt-[env(safe-area-inset-top)] md:min-h-0 md:px-6 md:pt-8 md:pb-2">
+    <header
+      className={
+        embedded
+          ? ''
+          : 'sticky top-0 z-20 border-b border-line bg-bg/90 backdrop-blur md:static md:border-0 md:bg-transparent md:backdrop-blur-none'
+      }
+    >
+      <div
+        className={`mx-auto flex min-h-14 max-w-3xl items-center gap-1 px-2 pt-[env(safe-area-inset-top)] transition-[padding] md:min-h-0 md:px-6 ${
+          compact ? 'md:pt-3 md:pb-2' : 'md:pt-8 md:pb-2'
+        }`}
+      >
         {back ? (
           <button
             type="button"
@@ -158,7 +174,11 @@ export function PageHeader({
           </button>
         ) : null}
         <div className={`min-w-0 flex-1 ${back ? '' : 'pl-2 md:pl-0'}`}>
-          <h1 className="truncate text-lg font-semibold md:text-2xl md:font-bold">
+          <h1
+            className={`truncate text-lg font-semibold ${
+              compact ? 'md:text-xl' : 'md:text-2xl md:font-bold'
+            }`}
+          >
             {title}
           </h1>
           {subtitle ? (

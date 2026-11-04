@@ -43,6 +43,21 @@ import { WordRow } from './WordRow';
 type Tab = 'words' | 'rules';
 
 /**
+ * True once the page is scrolled down: the sticky header and tiles shrink.
+ * Two thresholds, so the height change it causes can't flip it back.
+ */
+function useScrolled(): boolean {
+  const [scrolled, setScrolled] = useState(() => window.scrollY > 48);
+  useEffect(() => {
+    const onScroll = () =>
+      setScrolled(prev => (prev ? window.scrollY > 8 : window.scrollY > 48));
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return scrolled;
+}
+
+/**
  * Words of one set: Learn / Flashcards / Study words tiles, then "To learn"
  * and "Learned". When the set has rules, Words / Rules tabs on top.
  */
@@ -72,6 +87,7 @@ export function SetPage() {
     }
   }, [loaded, words, rules]);
   const [query, setQuery] = useState('');
+  const scrolled = useScrolled();
   const hasRules = rules.length > 0;
   const activeTab: Tab = hasRules && !selected ? tab : 'words';
 
@@ -365,41 +381,82 @@ export function SetPage() {
       }
       onMenu={() => wordMenu(word)}
       onOpenDescription={() => showReader({ title: word.term, text: word.description })}
-      selection={
-        selected
-          ? {
-              selected: selected.has(word.id),
-              onToggle: () => setSelected(prev => (prev ? toggle(prev, word.id) : prev)),
-            }
-          : undefined
-      }
+      selecting={selecting}
+      selected={!!selected?.has(word.id)}
+      // The hover checkbox starts "Select words" with this word.
+      onToggleSelected={() => setSelected(prev => toggle(prev ?? new Set(), word.id))}
     />
   );
 
+  const showTiles = activeTab === 'words' && loaded && words.length > 0 && !selected;
+
   return (
     <>
-      <PageHeader
-        title={set.name}
-        subtitle={languageName}
-        back="/sets"
-        actions={
-          selected ? (
-            <Button
-              variant="ghost"
-              onClick={() =>
-                setSelected(allSelected ? new Set() : new Set(words.map(w => w.id)))
+      <div
+        className={`sticky top-0 z-20 bg-bg/90 backdrop-blur transition-[border-color] ${
+          scrolled ? 'border-b border-line' : 'border-b border-transparent'
+        }`}
+      >
+        <PageHeader
+          embedded
+          compact={scrolled}
+          title={set.name}
+          subtitle={languageName}
+          back="/sets"
+          actions={
+            selected ? (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setSelected(allSelected ? new Set() : new Set(words.map(w => w.id)))
+                }
+              >
+                {allSelected ? 'Deselect all' : 'Select all'}
+              </Button>
+            ) : (
+              <>
+                <IconButton icon={Plus} label="Add word or rule" onClick={() => openWordForm()} />
+                <IconButton icon={CircleEllipsis} label="Set actions" onClick={openSetMenu} />
+              </>
+            )
+          }
+        />
+        {showTiles ? (
+          <div
+            className={`mx-auto grid max-w-3xl gap-2 px-3 transition-all md:px-6 ${
+              scrolled
+                ? 'grid-cols-3 pb-2'
+                : 'grid-cols-2 pt-1 pb-2 sm:grid-cols-3 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1'
+            }`}
+          >
+            <ActionTile
+              icon={GraduationCap}
+              title="Learn"
+              subtitle={`${STUDY_MODES.length + 1} study modes`}
+              compact={scrolled}
+              onPress={openLearn}
+            />
+            <ActionTile
+              icon={GalleryHorizontalEnd}
+              title="Flashcards"
+              subtitle={toLearnCount > 0 ? `${toLearnCount} to learn` : 'All learned'}
+              compact={scrolled}
+              onPress={() => openGame('flashcards', 'Flashcards')}
+            />
+            <ActionTile
+              icon={ListChecks}
+              title="Study words"
+              subtitle={
+                toLearnCount > 0
+                  ? `${Math.min(toLearnCount, STUDY_WORDS_COUNT)} words · choose, then write`
+                  : 'All learned'
               }
-            >
-              {allSelected ? 'Deselect all' : 'Select all'}
-            </Button>
-          ) : (
-            <>
-              <IconButton icon={Plus} label="Add word or rule" onClick={() => openWordForm()} />
-              <IconButton icon={CircleEllipsis} label="Set actions" onClick={openSetMenu} />
-            </>
-          )
-        }
-      />
+              compact={scrolled}
+              onPress={() => openGame('study-words', 'Study words')}
+            />
+          </div>
+        ) : null}
+      </div>
       <PageBody>
         {hasRules && !selected ? (
           <div className="pb-3">
@@ -437,39 +494,13 @@ export function SetPage() {
           />
         ) : (
           <>
-            {!selected ? (
-              <div className="grid grid-cols-2 gap-2 pb-2 sm:grid-cols-3 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
-                <ActionTile
-                  icon={GraduationCap}
-                  title="Learn"
-                  subtitle={`${STUDY_MODES.length + 1} study modes`}
-                  onPress={openLearn}
-                />
-                <ActionTile
-                  icon={GalleryHorizontalEnd}
-                  title="Flashcards"
-                  subtitle={toLearnCount > 0 ? `${toLearnCount} to learn` : 'All learned'}
-                  onPress={() => openGame('flashcards', 'Flashcards')}
-                />
-                <ActionTile
-                  icon={ListChecks}
-                  title="Study words"
-                  subtitle={
-                    toLearnCount > 0
-                      ? `${Math.min(toLearnCount, STUDY_WORDS_COUNT)} words · choose, then write`
-                      : 'All learned'
-                  }
-                  onPress={() => openGame('study-words', 'Study words')}
-                />
-              </div>
-            ) : null}
             {words.length > 8 ? (
               <input
                 type="search"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search words"
-                className="mt-2 w-full rounded-xl border border-line bg-surface px-3 py-2 outline-none focus:border-primary"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2 outline-none focus:border-primary"
               />
             ) : null}
             {toLearn.length > 0 ? (

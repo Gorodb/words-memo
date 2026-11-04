@@ -3,7 +3,7 @@
 Account, sync and library server for the wordsLearning app and website: NestJS 12, TypeORM 1 and PostgreSQL.
 
 - **The phone app** stays offline-first. Its SQLite database is the only thing it reads from, and it syncs a copy per account through `/sync`.
-- **The website** (`web/`) works directly on that copy through the library routes (`/languages`, `/folders`, `/sets`, `/words`, `/rules`, `/backup`). Its changes reach the phones with their next sync.
+- **The website** (`web/`) works directly on that copy through the library routes (`/languages`, `/folders`, `/sets`, `/words`, `/rules`, `/backup`). Its changes reach the phones with their next sync, which live updates (`GET /events`) start right away.
 - **Dictionaries**: the Wiktionary `<lang>-ru.db` files live on this server. The app downloads them from `GET /dictionaries/<file>`, and the website looks words up through the API.
 
 ## Run
@@ -123,6 +123,7 @@ New migrations run on that restart.
   - The Node.js version is older than 22.18.
 - **`no pg_hba.conf entry for host "127.0.0.1"`**: the host's PostgreSQL doesn't accept TCP logins from 127.0.0.1, only from its Unix socket. Put the socket directory in `DATABASE_URL` as `host` and leave the host part empty: `postgres://<user>:<password>@/<database>?host=/var/run/postgresql` (on some hosts the directory is `/tmp`; look for the `.s.PGSQL.5432` file). If that fails with `Peer authentication failed`, ask the host to allow password logins for your user, either over the socket or from `127.0.0.1/32`.
 - **The app says "The dictionary is not on the server yet (HTTP 404)"**: the file isn't in `dictionaries/` in the application root (or in `DICTIONARIES_DIR`). Names must be exactly `de-ru.db` and `en-ru.db`. `GET /dictionaries` shows what the server finds.
+- **Live updates arrive late or all at once**: something in front of Passenger buffers responses (LiteSpeed, nginx, a CDN). Ask the host to turn off response buffering for the API's domain. Clients still get every change with their next sync or refresh.
 - **The first sync fails with 413** on a large word list: the web server in front of Passenger has its own request size limit. Ask the host to raise `LimitRequestBody` (Apache) or the LiteSpeed request body limit to at least 50 MB.
 
 ## API
@@ -139,7 +140,16 @@ All bodies are JSON. Errors look like `{ code?, message }`, and the app branches
 | `POST /shares` | bearer, `{payload}` (the app's backup file, `kind: 'sets'`, ≤ 5 MB) | 201 `{code, expiresAt}` · 400 `BAD_SHARE_PAYLOAD` · 429 `TOO_MANY_SHARES` |
 | `GET /shares/:code` | | `{payload, expiresAt}` without using the code · 404 `SHARE_NOT_FOUND` |
 | `POST /shares/:code/redeem` | | `{payload, expiresAt}` and the code is gone · 404 `SHARE_NOT_FOUND` |
+| `GET /events` | bearer, `X-Client-Id` | server-sent events, see below |
 | `GET /health` | | `{ok: true}` |
+
+### Live updates (`GET /events`)
+
+A `text/event-stream` that stays open. On connect it sends `event: changed` with `data: {"version": <the account's sync version>, "tables": []}`; after that, one `changed` event (`tables` = the synced tables written) for every committed write by **another** client: a phone's `/sync` push or a website request. Clients send a random `X-Client-Id` header with every request, and a stream doesn't get the changes made with its own id. `: ping` comments go out every 25 s.
+
+- The phone syncs when `version` is past its cursor; the website refetches the queries of the changed tables.
+- Writes publish a Postgres `NOTIFY account_changes` inside their transaction, so it goes out only on commit and reaches every server process; each process `LISTEN`s on one extra connection (`src/events/`).
+- The streams are long-lived connections: the host must not buffer responses (the stream sets `X-Accel-Buffering: no` and `Cache-Control: no-transform`).
 
 ### Library (the website)
 
