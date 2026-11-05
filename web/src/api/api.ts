@@ -34,6 +34,9 @@ import type {
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_URL,
+  // Refetches after a write must reach the server, whatever cache headers the
+  // hosting adds (it once made "Mark as learned" look like it did nothing).
+  cache: 'no-store',
   prepareHeaders: (headers, { getState }) => {
     const { token } = (getState() as { auth: AuthState }).auth;
     if (token) {
