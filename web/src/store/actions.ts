@@ -105,6 +105,8 @@ export const updateWord = (id: ID, patch: WordPatch) =>
 
 export const setLearned = (id: ID, learned: boolean) => updateWord(id, { learned });
 
+export const setFavorite = (id: ID, favorite: boolean) => updateWord(id, { favorite });
+
 export const setLearnedMany = (ids: ID[]) =>
   ids.length ? dispatch(api.markLearned.initiate(ids)).unwrap() : Promise.resolve();
 

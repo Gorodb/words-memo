@@ -40,12 +40,15 @@ export function IconButton({
   size = 20,
   className = '',
   active = false,
+  filled = false,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   icon: ComponentType<LucideProps>;
   label: string;
   size?: number;
   active?: boolean;
+  /** Fills the icon's shape with its color (e.g. a word's star). */
+  filled?: boolean;
 }) {
   return (
     <button
@@ -57,7 +60,7 @@ export function IconButton({
         active ? 'text-primary' : 'text-muted hover:text-fg'
       } ${className}`}
     >
-      <Icon size={size} />
+      <Icon size={size} fill={filled ? 'currentColor' : 'none'} />
     </button>
   );
 }

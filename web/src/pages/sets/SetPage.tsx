@@ -25,6 +25,7 @@ import {
   deleteWord,
   renameSet,
   resetLearned,
+  setFavorite,
   setLearned,
   setSetPinned,
   updateRule,
@@ -378,6 +379,9 @@ export function SetPage() {
       onToggleExpanded={() => setExpanded(prev => toggle(prev, word.id))}
       onToggleLearned={() =>
         attempt('Could not save', setLearned(word.id, word.learnedAt === null))
+      }
+      onToggleFavorite={() =>
+        attempt('Could not save', setFavorite(word.id, word.favoriteAt === null))
       }
       onMenu={() => wordMenu(word)}
       onOpenDescription={() => showReader({ title: word.term, text: word.description })}

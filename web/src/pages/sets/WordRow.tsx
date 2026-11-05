@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { EllipsisVertical, FileText, Volume2 } from 'lucide-react';
+import { EllipsisVertical, FileText, Star, Volume2 } from 'lucide-react';
 import type { Word } from '../../domain/types';
 import { speakTerm, speechLocale } from '../../features/speech/speech';
 import { IconButton } from '../../ui/Button';
@@ -19,8 +19,9 @@ export async function pronounce(term: string, languageCode: string) {
 
 /**
  * One word: term, translation, then (tapped open) its examples. A "Description"
- * link opens the Markdown note. "Learned" / "To revise" moves it between the
- * parts, like on the phone. With a mouse, a faint checkbox shows on hover:
+ * link opens the Markdown note. On the right, like on the phone: the star and
+ * the speaker, with "Learned" / "To revise" (moves it between the parts) under
+ * them. With a mouse, a faint checkbox shows on hover:
  * checking it starts "Select words" with this word.
  */
 export const WordRow = memo(function WordRow({
@@ -31,6 +32,7 @@ export const WordRow = memo(function WordRow({
   onToggleSelected,
   onToggleExpanded,
   onToggleLearned,
+  onToggleFavorite,
   onMenu,
   onOpenDescription,
 }: {
@@ -42,10 +44,12 @@ export const WordRow = memo(function WordRow({
   onToggleSelected: () => void;
   onToggleExpanded: () => void;
   onToggleLearned: () => void;
+  onToggleFavorite: () => void;
   onMenu: () => void;
   onOpenDescription: () => void;
 }) {
   const learned = word.learnedAt !== null;
+  const favorite = word.favoriteAt !== null;
   const canSpeak = speechLocale(word.languageCode) !== null;
   const longPress = useLongPress(selecting ? undefined : onMenu);
   return (
@@ -121,27 +125,37 @@ export const WordRow = memo(function WordRow({
         ) : null}
       </div>
       {selecting ? null : (
-        <div className="-mt-1 flex shrink-0 items-start gap-0.5">
-          <button
-            type="button"
-            title={learned ? 'Move to "To learn"' : 'Mark as learned'}
-            onClick={onToggleLearned}
-            className={`mt-0.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition select-none ${
-              learned
-                ? 'bg-surface-2 text-fg hover:brightness-95 dark:hover:brightness-125'
-                : 'bg-primary text-white hover:brightness-110'
-            }`}
-          >
-            {learned ? 'To revise' : 'Learned'}
-          </button>
-          {canSpeak ? (
-            <IconButton
-              icon={Volume2}
-              label="Pronounce"
-              size={18}
-              onClick={() => void pronounce(word.term, word.languageCode)}
-            />
-          ) : null}
+        <div className="-mt-1 flex shrink-0 items-start">
+          <div className="flex flex-col items-end">
+            <div className="flex items-center gap-0.5">
+              <IconButton
+                icon={Star}
+                label={favorite ? 'Unstar' : 'Star'}
+                size={18}
+                filled={favorite}
+                className={favorite ? 'text-warning! hover:text-warning!' : ''}
+                onClick={onToggleFavorite}
+              />
+              {canSpeak ? (
+                <IconButton
+                  icon={Volume2}
+                  label="Pronounce"
+                  size={18}
+                  onClick={() => void pronounce(word.term, word.languageCode)}
+                />
+              ) : null}
+            </div>
+            <button
+              type="button"
+              title={learned ? 'Move to "To learn"' : 'Mark as learned'}
+              onClick={onToggleLearned}
+              className={`rounded-md px-2 py-1 text-sm font-semibold transition select-none hover:underline ${
+                learned ? 'text-muted hover:text-fg' : 'text-primary'
+              }`}
+            >
+              {learned ? 'To revise' : 'Learned'}
+            </button>
+          </div>
           <IconButton icon={EllipsisVertical} label="Word actions" size={18} onClick={onMenu} />
         </div>
       )}
