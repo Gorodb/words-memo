@@ -39,6 +39,8 @@ RootStack
 
 ## Folder structure
 
+The repo has three projects: `mobile/` (this app), `backend/` (sync server) and `web/` (website). Paths below are inside `mobile/`.
+
 ```
 src/
   app/App.tsx                 providers: gesture root, safe area, theme, navigation, bottom sheets
@@ -140,10 +142,10 @@ Words are **not unique**: the same term can be in several sets of one language.
 
 Built from **Wiktionary** via kaikki.org / wiktextract (CC BY-SA 4.0). The original wikidict files were Wikipedia title pairs (no verbs, `Apfel → Апфель`) and were dropped.
 
-- **Sources** (`npm run dict:fetch`, into gitignored `dictionaries/source/`):
+- **Sources** (`npm run dict:fetch` in `mobile/`, into gitignored `mobile/dictionaries/source/`):
   - Russian Wiktionary raw dump (295 MB gz). It provides Russian glosses, forms and translated examples for German and English.
   - English Wiktionary German extract (1 GB). It's used only for the verb auxiliary (haben/sein) and adjective comparison, which Russian Wiktionary lacks.
-- **Build** (`npm run dict:build`, about 20 s) writes `dictionaries/build/<lang>-ru.db`. Sizes: de about 18 MB (85k entries), en about 14 MB (64k entries).
+- **Build** (`npm run dict:build`, about 20 s) writes `mobile/dictionaries/build/<lang>-ru.db`. Sizes: de about 18 MB (85k entries), en about 14 MB (64k entries).
 - **Display forms**:
   - German nouns: `der Apfel, die Äpfel`.
   - German verbs: `essen, isst, aß, hat gegessen` (or `ist` / `hat/ist`).

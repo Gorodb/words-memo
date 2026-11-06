@@ -15,9 +15,9 @@ npm install
 npm run start:dev           # http://localhost:3000, applies migrations on start
 ```
 
-Everything in Docker: `docker compose up -d --build`. The `api` container mounts the app's `dictionaries/build/` (from `npm run dict:build` in the repo root) as its dictionaries folder.
+Everything in Docker: `docker compose up -d --build`. The `api` container mounts the app's `mobile/dictionaries/build/` (from `npm run dict:build` in `mobile/`) as its dictionaries folder.
 
-Without Docker, put the dictionary files in `backend/dictionaries/`, or set `DICTIONARIES_DIR` (e.g. `DICTIONARIES_DIR=../dictionaries/build`).
+Without Docker, put the dictionary files in `backend/dictionaries/`, or set `DICTIONARIES_DIR` (e.g. `DICTIONARIES_DIR=../mobile/dictionaries/build`).
 
 For the Android emulator or a USB device, run `adb reverse tcp:3000 tcp:3000` so the app's `http://localhost:3000` (see `src/config/sync.ts` in the app) reaches this machine. Release builds need an HTTPS URL there.
 
@@ -69,7 +69,7 @@ package-lock.json
 
 1. cPanel → **File Manager**: create a folder outside `public_html`, e.g. `/home/<cpuser>/words-api`.
 2. Upload the files there. The easiest way is to zip them locally, upload the zip, then use **Extract**. FTP/SFTP or `scp` also work.
-3. **Dictionaries**: create the folder `dictionaries` inside it (`/home/<cpuser>/words-api/dictionaries`). Upload `de-ru.db` and `en-ru.db` from the repo's `dictionaries/build/` there; `npm run dict:build` in the repo root makes them. They are about 18 and 14 MB. If File Manager's upload limit is lower, zip them first or use FTP. The app downloads them from `https://api.example.com/dictionaries/de-ru.db`; `GET /dictionaries` lists what the server has.
+3. **Dictionaries**: create the folder `dictionaries` inside it (`/home/<cpuser>/words-api/dictionaries`). Upload `de-ru.db` and `en-ru.db` from the repo's `mobile/dictionaries/build/` there; `npm run dict:build` in `mobile/` makes them. They are about 18 and 14 MB. If File Manager's upload limit is lower, zip them first or use FTP. The app downloads them from `https://api.example.com/dictionaries/de-ru.db`; `GET /dictionaries` lists what the server has.
 
 ### 4. Create the Node.js app
 
@@ -105,7 +105,7 @@ If you have SSH or **Terminal**, the app page shows the command to enter its env
 
 ### Updating
 
-- **Dictionaries**: upload the new `.db` files over the old ones in `dictionaries/`. No restart is needed: the server reopens a file when it changes. If `FORMAT_VERSION` in `scripts/dictionary/schema.ts` changed, release the app with the matching `DICTIONARY_FORMAT` at the same time.
+- **Dictionaries**: upload the new `.db` files over the old ones in `dictionaries/`. No restart is needed: the server reopens a file when it changes. If `FORMAT_VERSION` in `mobile/scripts/dictionary/schema.ts` changed, release the app with the matching `DICTIONARY_FORMAT` at the same time.
 
 To update the code:
 

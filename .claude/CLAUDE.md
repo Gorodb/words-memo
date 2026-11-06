@@ -6,7 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Offline-first React Native app (Android + iOS) for learning English and German words (plus languages the user adds) with Russian translations. An optional account syncs the data through the NestJS backend in `backend/` (see "Sync" below); without one, the app works fully offline. **`.claude/PLAN.md` is the source of truth** for product decisions, the roadmap (numbered steps, ✅ = done), and the backup/import merge rules. Feature plans live in `.claude/plans/`. Read it before starting a feature and update it when a step is completed or a decision changes.
 
+## Repo layout
+
+Three separate projects, each with its own `package.json`: `mobile/` (the React Native app: `src/`, `android/`, `ios/`, `__tests__/`, `scripts/`, `assets/`, `test-utils/`), `backend/` and `web/`. Paths in this file are relative to `mobile/` unless they start with `backend/`, `web/` or `.claude/`. `.claude/` and `.mcp.json` stay in the repo root.
+
 ## Commands
+
+Run app commands from `mobile/` (`cd mobile`).
 
 ```sh
 npm start                      # Metro
@@ -22,11 +28,11 @@ npm run dict:build             # build dictionaries/build/<lang>-ru.db (~20 s)
 node scripts/dictionary/query.ts de essen Apf   # try lookups against a built dictionary
 npm run android:release        # release APKs per ABI → dist/words-memo-<versionName>-arm64.apk / -armv7.apk (signing: WORDS_UPLOAD_* in ~/.gradle/gradle.properties)
 npm run brand                  # regenerate launcher icons from scripts/brand/artwork.ts (then re-run the bootsplash command it prints)
-cd backend && docker compose up -d db && npm run start:dev   # sync server on :3000 (see backend/README.md)
+cd ../backend && docker compose up -d db && npm run start:dev   # sync server (from mobile/) on :3000 (see backend/README.md)
 adb reverse tcp:3000 tcp:3000  # lets the app's http://localhost:3000 reach it from an emulator / USB device
 ```
 
-`backend/` is a separate Node project (ESM, its own `package.json`, `npm test` = `node --test`). The root `tsconfig.json`, ESLint, Jest and Metro all ignore it.
+`backend/` is a separate Node project (ESM, its own `package.json`, `npm test` = `node --test`).
 
 Release signing: `android/app/build.gradle` uses the upload key from the `WORDS_UPLOAD_*` gradle properties and falls back to the debug key with a warning. Updates must always be signed with the same key: a key change forces an uninstall, which deletes the user's local words. Bump `versionCode` and `versionName` in `android/app/build.gradle` for every release you install over an older one. ABI splits (arm64-v8a, armeabi-v7a) are enabled only for release tasks.
 
@@ -34,7 +40,7 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 
 ## Architecture
 
-- **Entry**: `App.tsx` re-exports `src/app/App.tsx`. `bootstrap()` runs **synchronously before the first render**: it opens SQLite, applies migrations and hydrates the settings store. That's why settings reads and migrations use `executeSync`.
+- **Entry**: `mobile/App.tsx` re-exports `src/app/App.tsx`. `bootstrap()` runs **synchronously before the first render**: it opens SQLite, applies migrations and hydrates the settings store. That's why settings reads and migrations use `executeSync`.
 - **Navigation** (`src/navigation/`): a root native stack contains `Tabs` (Folders, Sets, Languages, Settings) plus screens that must cover the tab bar and be reachable from several tabs (`Set`, `Study`). The Folders tab has its own nested stack (`Folders` → `Folder`). Param lists live in `navigation/types.ts`, and `ReactNavigation.RootParamList` is declared globally. Screens inside nested stacks get a root-typed navigator with `useNavigation<NativeStackNavigationProp<RootStackParamList>>()` when they open root screens.
 - **Data** (`src/db/`): op-sqlite. Each `repositories/*.ts` module is a set of async functions that map snake_case rows to the camelCase types in `src/domain/types.ts`. **After every write, a repository must call `notifyChanged(...tables)`** (`db/changes.ts`). Screens read data with `useQuery(load, tables)`, which re-runs when one of those tables changes. `load` must be memoized with `useCallback`, otherwise it re-runs on every render. There's no global data cache. The DB is the state.
 - **Migrations** (`db/migrations.ts`): an append-only array whose version is tracked in `PRAGMA user_version`. Never edit a migration that has shipped; add a new one. `migrate()` turns foreign keys off while migrating, so a migration can rebuild a table (create, copy, drop, rename) without cascading deletes, and it runs `foreign_key_check` before committing. `PRAGMA foreign_keys = ON` is set per connection in `database.ts`.
@@ -78,7 +84,7 @@ Stack: RN 0.88 (New Architecture, Hermes), React 19, TypeScript. Reanimated 4 ne
 
 ## Website (`web/`)
 
-- A separate Vite project (own `package.json`; root tsconfig, ESLint, Jest and Metro ignore it): React 19 + Redux Toolkit + React Router + Tailwind 4. `cd web && npm run dev | npm test | npm run build`; deploy notes in `web/README.md` (cPanel Node.js app, startup file `server.cjs`).
+- A separate Vite project (own `package.json`): React 19 + Redux Toolkit + React Router + Tailwind 4. `cd web && npm run dev | npm test | npm run build`; deploy notes in `web/README.md` (cPanel Node.js app, startup file `server.cjs`).
 - The website is a thin client of the backend: all data goes through RTK Query (`web/src/api/api.ts`) to the library routes (`backend/src/library/`), and needs an account. Only the session token and the theme / active language preferences are in `localStorage`. The study reducers run in the browser and save results through the API.
 - Backend library routes write the same rows `/sync` serves, with the user's next sync version under the same row lock (`LibraryStore`), as tombstones for deletes and with explicit cascades. So a new synced field needs: the app migration + `TABLES` entry, both `protocol.ts` files, the backend entity + migration, and the library service where it's set.
 - Copies of the app's pure modules, keep them in step: in `web/` the domain types, study reducers, markdown and `form.ts`; in `backend/src/library/shared/` the backup format and merge; in `backend/src/dictionaries/` the dictionary queries, `searchKey` and `similarWords`. A change to the sync protocol or the backup format must land in all of them.

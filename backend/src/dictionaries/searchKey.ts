@@ -1,6 +1,6 @@
 // Copied from the app (src/features/dictionary/searchKey.ts); keep both in step.
 /**
- * Dictionary lookup keys. Shared by the build script (scripts/dictionary) and
+ * Dictionary lookup keys. Shared by the build script (mobile/scripts/dictionary) and
  * the app, so both normalize the same way.
  */
 

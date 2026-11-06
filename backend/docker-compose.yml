@@ -24,7 +24,7 @@ services:
       DICTIONARIES_DIR: /dictionaries
     volumes:
       # The app's `npm run dict:build` output.
-      - ../dictionaries/build:/dictionaries:ro
+      - ../mobile/dictionaries/build:/dictionaries:ro
     ports:
       - '3000:3000'
     depends_on:

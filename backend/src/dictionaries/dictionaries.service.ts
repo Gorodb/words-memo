@@ -19,7 +19,7 @@ import {
   type Scalar,
 } from './queries.ts';
 
-/** Must equal FORMAT_VERSION in the app's scripts/dictionary/schema.ts. */
+/** Must equal FORMAT_VERSION in the app's mobile/scripts/dictionary/schema.ts. */
 export const DICTIONARY_FORMAT = 1;
 
 const FILE = /^([a-z]{2,3})-ru\.db$/;

@@ -1,9 +1,6 @@
 module.exports = {
   preset: '@react-native/jest-preset',
   setupFiles: ['./jest.setup.js'],
-  // The backend and the website are separate Node projects with their own tests.
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/backend/', '<rootDir>/web/'],
-  modulePathIgnorePatterns: ['<rootDir>/backend/', '<rootDir>/web/'],
   // Skips the .native files of reanimated / worklets, which need native modules.
   resolver: 'react-native-reanimated/jest/resolver',
   transformIgnorePatterns: [
